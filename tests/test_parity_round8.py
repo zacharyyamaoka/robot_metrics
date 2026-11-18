@@ -1,7 +1,7 @@
 """Test 1 · parity with round 8: robot_metrics reproduces the scorecard at the frozen check's tolerances.
 
 Over the 252 real plays of /archive/datasets/bam_rig/onedof_2026-11-15/round8/real/*/runs/*.npz against
-scorecards/latest_real.json (read-only), the twin's answers to the same plays, and the five-bar ladder's summary.json.
+scorecards/round8.json (read-only; latest_real.json moves every round), the twin's answers to the same plays, and the five-bar ladder's summary.json.
 The oracle and tolerances are check_scenario.py's, ported unchanged (tests/oracle.py). Never loosen a tolerance: a
 failure here is a FAIL with its gap.
 """

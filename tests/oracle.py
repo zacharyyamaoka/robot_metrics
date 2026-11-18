@@ -3,7 +3,7 @@ docs/proposals/metrics-api-2026-11-17/check_scenario.py). Test-side only: the pa
 
 What is ported unchanged:
 - the tolerances (frozen with the contract on 2026-11-17 at 20:05 MST, amendment 1 folded in before any variant);
-- ``_scorecard_oracle`` (per play, per rung, sim side, highest rung, gate counts from latest_real.json);
+- ``_scorecard_oracle`` (per play, per rung, sim side, highest rung, gate counts from round8.json);
 - ``_chain_oracle`` (the five-bar ladder's own summary.json, every number robot_msgs.compare's);
 - ``_overshoot_oracle`` and ``_repeatability_oracle`` (independent of the stop kernel: their own dwell segmentation);
 - ``calibration.oracle_residual_rms`` (amendment 4: RMS of measured - feed-forward torque over every held-out sample);
@@ -22,7 +22,9 @@ from collections.abc import Sequence
 
 import numpy as np
 
-SCORECARD = pathlib.Path("/archive/datasets/bam_rig/onedof_2026-11-15/scorecards/latest_real.json")
+# WHY round8.json, not latest_real.json: the campaign rewrites latest_real.json every round (round 9 on 2026-11-17 21:43),
+# and this ruler is round 8's. round8.json is byte-identical to the latest_real.json v0 was proven on (md5 3b98de359d22).
+SCORECARD = pathlib.Path("/archive/datasets/bam_rig/onedof_2026-11-15/scorecards/round8.json")
 CHAIN_SUMMARY = pathlib.Path("/archive/datasets/bam_rig/rack_2026-11-10/fivebar_real/ladder_real_124755/ladder/summary.json")
 SEALED_LADDER = pathlib.Path(__file__).resolve().parent / "data" / "sealed_ladder_held_out.json"
 

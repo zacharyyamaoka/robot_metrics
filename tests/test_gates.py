@@ -1,7 +1,7 @@
 """Test 5 · gate counts equal the contract's: tracking 31, median tip stop 36, every stop 33 of 36 rung cells.
 
 The contract (robot_models docs/proposals/metrics-api-2026-11-17/README.md, "Result") states the three counts; the
-scorecard oracle recomputes them from latest_real.json. Gates are OpenSLO-style occurrence objectives judged outside
+scorecard oracle recomputes them from round8.json. Gates are OpenSLO-style occurrence objectives judged outside
 compute(), per stratum (station x rung), on a tail statistic, never an IQM.
 """
 
