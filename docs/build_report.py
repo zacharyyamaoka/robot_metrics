@@ -18,6 +18,7 @@ import base64
 import html
 import io
 import os
+import re
 import subprocess
 import sys
 import tarfile
@@ -41,6 +42,9 @@ MEDIA = ROOT / "reports" / "media" / "robot-metrics-v0-2026-11-17"
 TESTS_FIRST = "7f8763c"
 PIN = ["taskset", "-c", "2-5,16,17"]
 PYTHON = str(ROOT / ".venv" / "bin" / "python")
+# WHY a scrub and a refusal (2026-11-18): the report is public; a pytest header and a run's id carried this machine's
+# paths into it once
+PRIVATE = re.compile(r"/home/|/archive|/Users/|@gmail|\.netrc|wandb_api|gh[pousr]_[A-Za-z0-9]{20}")
 
 
 def sh(command: list[str], *, cwd: Path = ROOT, env: dict | None = None, timeout: int = 900) -> tuple[str, int, float]:
@@ -173,7 +177,7 @@ def output(text: str) -> str:
     return f"<pre class='out{' wrap' if wrap else ''}'>{html.escape(text)}</pre>"
 
 
-def notebook(cell: dict) -> str:
+def notebook(cell: dict, script: str) -> str:
     """A cell as a notebook: its statements highlighted, each output in a quieter band right under its statement.
     Statements with no output share one block, with the source's blank lines between ideas; a blank line that falls
     right after an output becomes the next block's extra top space (``gap``)."""
@@ -191,7 +195,7 @@ def notebook(cell: dict) -> str:
             group = []
     if group:
         blocks.append(f"<pre class='src{' gap' if group_gap else ''}'>{python(chr(10).join(group))}</pre>")
-    return f"<div class='notebook'>{''.join(blocks)}</div>"
+    return f"<div class='notebook' data-script='{script}'>{''.join(blocks)}</div>"
 
 
 def token_css() -> str:
@@ -250,7 +254,7 @@ def main() -> None:
     isolated, isolated_code = isolation()
     table = parity()
     rulers = wrong_rulers()
-    session = usage_session.run(MEDIA)
+    glance_session, session = usage_session.run(MEDIA)
     passed_line = next((line for line in reversed(green.splitlines()) if " passed" in line), "")
     worst = table["worst"]
 
@@ -285,18 +289,18 @@ def main() -> None:
     highest = ", ".join(f"{station} {rung:g}" for station, rung in table["highest"].items())
     ruler_rows = "".join(f"<tr><td>{label}</td><td class='{'fail' if verdict == 'RED' else 'pass'}'>{verdict}</td>"
                          f"<td class='num'>{value:.2e} deg</td></tr>" for label, verdict, value in rulers)
-    glance, *walkthrough = session.cells
+    glance = glance_session.cells[0]
     cells = "".join(f"<h3>{index} · {html.escape(cell['label'])}</h3><p class='cell-caption'>{html.escape(cell['caption'])}</p>"
-                    + notebook(cell) for index, cell in enumerate(walkthrough, start=1))
+                    + notebook(cell, "report-session") for index, cell in enumerate(session.cells, start=1))
     tests_passed = passed_line.strip("= ").split(" passed")[0]
     status = "PASS" if not table["problems"] and green_code == 0 and isolated_code == 0 else "FAIL"
     page = f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>robot_metrics v0</title><style>{CSS}{token_css()}</style></head><body><main>
 <h1>robot_metrics v0</h1>
-<p class="verdict"><b>{status}: robot_metrics v0 reproduces round 8's scorecard at float round-off</b> — local
-<code>main</code> @ <code>{head}</code>, tests first @ <code>{tests_first}</code>; no remote. The W&amp;B send and a
-Rerun viewer were not exercised.</p>
+<p class="verdict"><b>{status}: robot_metrics v0 reproduces round 8's scorecard at float round-off</b> —
+<code>main</code> @ <code>{head}</code> (public: github.com/zacharyyamaoka/robot_metrics), tests first @
+<code>{tests_first}</code>. The W&amp;B send and a Rerun viewer were not exercised.</p>
 <p class="muted">The recommended splice of the five metrics-API proposals: v4's value-state core and occurrence gates under
 v1's torchmetrics face, v3's alignment step, v5's context rule, amendment 4's other inputs. Decision record:
 <code>docs/peps/0001-robot-metrics-v0.md</code>. Built {time.strftime('%Y-%m-%d %H:%M %Z')} by <code>docs/build_report.py</code>,
@@ -312,7 +316,7 @@ every block below from a real run.</p>
 <h2>API at a glance</h2>
 <p class="cell-caption">{html.escape(glance['caption'])} Each line's output sits right under it, from the run that
 built this page.</p>
-{notebook(glance)}
+{notebook(glance, "report-glance")}
 
 <h2>What it shows on real runs</h2>
 <figure><img alt="Every CAN 11 stop at the tip by rung, with Zach's 1 mm line" src="{image(MEDIA / 'can11-tip-stops.png')}">
@@ -336,8 +340,9 @@ the scorecard and the ladder's summary. {table['plays']} real plays, {table['sim
 <p class="muted">The contract predicted the linear plan at 9.4e-4 deg before any variant was built.</p>
 
 <h2>A usage session on CAN 11's round-8 runs</h2>
-<p class="muted">It continues the glance's namespace (<code>run</code>, <code>collection</code>, <code>strata</code>, ...);
-<code>MEDIA</code> is this report's media folder. One statement, then its output.</p>
+<p class="muted">One script on its own, top to bottom: each step continues the one before it, and it imports what
+it uses. It reads round 8's recordings, which are not public; the images and the .rrd it saves land in the folder it
+runs in. One statement, then its output.</p>
 {cells}
 
 <h2>Tests</h2>
@@ -358,11 +363,15 @@ robotparts / robot_models gain <code>.metrics</code> from <code>catalog</code>; 
 CalibrationOutcome are proposed moves into robot_msgs (PEP 0001 §7, §8).</li>
 <li><b>Needs you:</b> nothing.</li>
 <li><b>Deliberately not done:</b> no edits to robot_models, robot_msgs, sim2real, io-diagnostics, robotparts or bam_ws;
-no remote, no push; no W&amp;B upload (the payload is built and tested; <code>adapters.wandb.log</code> is not run); the
+no W&amp;B upload (the payload is built and tested; <code>adapters.wandb.log</code> is not run); the
 <code>.rrd</code> is written to the gitignored <code>reports/media/</code>, not opened in a viewer; no audit.</li>
 </ul>
 </main></body></html>
 """
+    page = page.replace(str(ROOT), "~/robot_metrics").replace(str(Path.home()), "~")
+    leaks = sorted({match.group(0) for match in PRIVATE.finditer(page)})
+    if leaks:
+        raise SystemExit(f"refusing to write: private material in the report: {leaks}")
     OUT.write_text(page, encoding="utf-8")
     print(f"wrote {OUT} ({OUT.stat().st_size / 1024:.0f} KB) · status {status} · green exit {green_code} · red exit "
           f"{red_code} · isolation exit {isolated_code} · problems {table['problems'][:3]}")

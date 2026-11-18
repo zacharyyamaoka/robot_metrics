@@ -28,6 +28,9 @@ cd ~/robot_metrics && taskset -c 2-5,16,17 uv run --extra test pytest -q
 ```
 
 - The acceptance tests were committed before the implementation (`7f8763c`). Don't edit a green test except to add.
+- Every Python block a reader sees (README, landing page, report) runs as shown: `tests/test_shown_examples.py` re-runs
+  the code extracted from the built pages, alone, in a fresh `python -I`. After editing `website/gallery.py` or
+  `docs/usage_session.py`, rebuild the site / report. Never put a name in a shown script's namespace.
 - `tests/oracle.py` is the frozen check's oracle and tolerances (robot_models f0daa34, `check_scenario.py`), ported
   unchanged. Only tests read the oracle files (round 8's scorecard, the ladder's summary); the package never does.
 - Real data on /archive is read-only; archive tests skip cleanly without it. `tests/data/` holds the sealed ladder

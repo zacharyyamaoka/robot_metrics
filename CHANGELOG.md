@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+Docs and checks only; the API is unchanged.
+
+- **Every Python block shown to a reader runs as shown.** The landing page's glance, each catalog card, each gallery
+  arm, the v0 report's glance and usage session, and the README: each imports what it uses, says where its data comes
+  from, and runs alone in a fresh `python -I` printing the outputs the page shows (`tests/test_shown_examples.py`,
+  which extracts the code from the built page). The catalog cards no longer lean on an unshown setup, and no example
+  uses a name the build put in its namespace.
+- **Plain words.** The landing page, the README and the report's comments say what `fold` / `update` / `close` do
+  ("run every sample through the metrics once", "a running tally"), group runs instead of "strata", and show
+  readable outputs instead of `Collection(15 aliases over 5 states)`.
+- **The report is public-safe.** Its builder scrubs this machine's paths and refuses to write one that leaks.
+
 ## 0.1.0 — 2026-11-18
 
 The first public release: the v0 core, made to stand on its own.

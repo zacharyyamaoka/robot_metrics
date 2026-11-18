@@ -3,9 +3,10 @@
 [![test](https://github.com/zacharyyamaoka/robot_metrics/actions/workflows/test.yml/badge.svg)](https://github.com/zacharyyamaoka/robot_metrics/actions/workflows/test.yml)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Performance metrics for robot parts: torchmetrics' shape with numpy inside, over robot_msgs streams. A metric is a
-frozen config whose state is a value, so one object scores a live stream chunk by chunk or a whole recording, and runs
-merge into rungs, stations and a deployment. Targets stay outside `compute()`, on OpenSLO-style objectives.
+Performance metrics for robot parts: tracking error, stop error, lag, repeatability. Hand it robot_msgs streams, a
+whole recording or a live feed a few samples at a time, and it turns them into numbers with units; the live feed gives
+the same numbers as the whole recording. Many runs group into rungs, stations and a deployment. Pass/fail targets are
+kept apart from the math, on objectives (OpenSLO-style). Shaped like torchmetrics, with numpy inside.
 
 **Landing page: <https://zacharyyamaoka.github.io/robot_metrics/>**. It has the API at a glance, a catalog of every
 stock metric with its stock `plot()`, and a gallery on three arms: a 1-DOF pendulum (real), a five-bar arm (real and
@@ -43,33 +44,36 @@ metrics = Collection([
     Alias("tracking RMS", ErrorStat(statistic="rms"), unit="deg", scale=DEGREES),
     Alias("stop error", StopStat(of="error", statistic="max"), unit="deg", scale=DEGREES),
 ])
-metrics.values(metrics.fold(run))          # offline: the whole recording, one fold
+metrics.values(metrics.fold(run))          # every sample of the recording, once
 # {'tracking RMS': 0.04695760451301328, 'stop error': 0.005879514223425522}
 
-state = metrics.empty()                    # live: the same fold, chunk by chunk
-for chunk in run.chunks(25):
-    state = metrics.update(state, chunk)
-metrics.values(metrics.close(state))
+tally = metrics.empty()                    # live: an empty running tally
+for chunk in run.chunks(25):               # the same recording, 25 samples at a time
+    tally = metrics.update(tally, chunk)
+metrics.values(metrics.close(tally))       # the run ended: the same numbers
 # {'tracking RMS': 0.04695760451301328, 'stop error': 0.005879514223425522}
 
-strata = summarize(metrics, [run], by=("rung",))      # many runs: values, tails, Wilson shares
-Objective("stop error", "<=", 0.1, unit="deg", on="value").judge(strata[(0.5,)]).verdict
+groups = summarize(metrics, [run], by=("rung",))      # many runs, grouped by rung
+stop_target = Objective("stop error", "<=", 0.1, unit="deg", on="value")   # pass/fail target
+stop_target.judge(groups[(0.5,)]).verdict
 # 'pass'
 ```
 
-Values come back in each alias's display unit (deg, mm, ms, %); the math runs in SI. The landing page runs the same
-API on real runs and shows every output.
+Numbers come back in each metric's display unit (deg, mm, ms, %); the math runs in SI. `fold(run)` runs every
+sample of a recording through the metrics in one call; `empty` / `update` / `close` do the same a chunk at a time, and
+what they pass along (here `tally`) is what the metrics have added up so far. The landing page runs the same API on
+real runs and shows every output; every Python block there and here runs as shown (`tests/test_shown_examples.py`).
 
 ## What is in it
 
 | module | what |
 |---|---|
-| `metric` | `Metric` (empty / update / merge / compute / close), `Stream` (torchmetrics' update / compute / reset / plot) |
+| `metric` | `Metric` (empty / update / merge / compute / close: a running tally, added up), `Stream` (torchmetrics' update / compute / reset / plot) |
 | `stock`, `functional` | `ErrorStat`, `ErrorPercentile`, `StopStat`, `TimeOffset`, `CodeShare`, `Repeatability`, `PerformanceGain`, and a function beside each |
-| `stops` | the stop kernel: dwells found one sample at a time, safe across chunk boundaries |
+| `stops` | the stop finder: where the plan holds still, found one sample at a time, safe across chunk boundaries |
 | `alignment` | `align` / `Aligner`: the plan at each reply's instant, with a tolerance, offline or live |
-| `collection`, `catalog` | `Alias`, `PartMetrics` (the seed of `RobotPart.metrics`), `Collection` (each identity once) |
-| `summary`, `objective` | strata, tails, Wilson shares; `Objective` / `Gate` / `Verdict` |
+| `collection`, `catalog` | `Alias` (a name and unit on a metric), `PartMetrics` (the seed of `RobotPart.metrics`), `Collection` (two names for the same metric and settings compute once) |
+| `summary`, `objective` | runs in groups: their numbers, the spread of every stop, Wilson shares; `Objective` / `Gate` / `Verdict` |
 | `views`, `adapters` | `View` to `plot()` (matplotlib), a W&B payload, a Rerun `.rrd` |
 | `datasets` | readers for the recordings the v0 was proven on (not public; `ROBOT_METRICS_ROUND8`, `ROBOT_METRICS_FIVEBAR_LADDER`) |
 
@@ -79,7 +83,7 @@ API on real runs and shows every output.
 uv run --extra test pytest -q
 ```
 
-53 of the 69 tests need nothing else; CI runs them on Python 3.11 to 3.13. The parity tests read the private
+70 of the 99 tests need nothing else; CI runs them on Python 3.11 to 3.13. The parity tests read the private
 recordings and skip cleanly without them.
 
 ## The landing page

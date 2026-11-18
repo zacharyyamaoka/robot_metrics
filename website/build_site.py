@@ -4,7 +4,9 @@
     python3 website/publish_pages.py                         # commits website/_build/ to gh-pages and pushes it
 
 Every code block on the page is a cell of ``gallery.py`` that this script ran (``docs/session.py``'s Session), and
-every image is a ``plot()`` it drew. It needs what the cells read: round 8 and the five-bar ladder (local recordings,
+every image is a ``plot()`` it drew. Each script (the glance, one catalog card, one gallery arm) runs in its own fresh
+namespace from a folder laid out like a clone's root; each notebook carries ``data-script`` so
+``tests/test_shown_examples.py`` can re-run exactly the code shown, alone, in a fresh ``python -I``. It needs what the cells read: round 8 and the five-bar ladder (local recordings,
 not public: ``ROBOT_METRICS_ROUND8``, ``ROBOT_METRICS_FIVEBAR_LADDER``) and MuJoCo Menagerie's UR5e (``MENAGERIE``).
 So the site is built where the recordings are and published as a build artifact on the gh-pages branch; main's
 history holds the builder, never the images or the data.
@@ -15,6 +17,7 @@ its own output in a quieter band, blank lines between ideas, the API at a glance
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import html
 import inspect
@@ -23,6 +26,7 @@ import os
 import re
 import shutil
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -53,8 +57,8 @@ PRIVATE = re.compile(r"/home/|/archive|/Users/|@gmail|\.netrc|wandb_api|gh[pousr
 # ---- the catalog's words: what the code cannot say about itself --------------------------------------------------
 
 GROUPS = (
-    ("Tracking", "How far the measured stream is from the target, row by row.", ("ErrorStat", "ErrorPercentile")),
-    ("Stops / dwell", "What happens where the plan holds still: each stop's error, settle, overshoot.", ("StopStat",)),
+    ("Tracking", "How far the measured motion is from the target, sample by sample.", ("ErrorStat", "ErrorPercentile")),
+    ("Stops", "What happens where the plan holds still: each stop's error, settle time, overshoot.", ("StopStat",)),
     ("Timing", "How late the response runs behind the command.", ("TimeOffset",)),
     ("Health / codes", "How often the drive reported a code: limiter, fault.", ("CodeShare",)),
     ("Repeatability", "The same command, played again: how far apart the answers land.", ("Repeatability",)),
@@ -65,8 +69,8 @@ INPUTS = {
     "AlignedPair": "<code>target</code>, <code>measured</code>: two robot_msgs streams on the same instants "
                    "(<code>JointTrajectory</code>, or <code>PoseTrajectory</code> for a tool). "
                    "<code>align()</code> puts a plan on the replies' instants first.",
-    "CommandAndState": "<code>command</code> on its own ticks and <code>state</code> as it came back: not aligned "
-                       "(finding the offset is the metric's job).",
+    "CommandAndState": "<code>command</code> on its own ticks and <code>state</code> (the measured motion) as it came "
+                       "back: not lined up in time (finding the offset is the metric's job).",
     "Repeat": "<code>Repeat(command, target, measured)</code>: one real repeat of one command per update; a repeat "
               "of another command is refused.",
     "HeldOutPair": "<code>HeldOutPair(nominal, fitted)</code>: the same held-out runs played with the nominal "
@@ -76,31 +80,48 @@ READS = {
     "ErrorStat": "the error <code>compare(target, measured).error</code> of one <code>field</code> and "
                  "<code>joint</code>, or a pose's position error",
     "ErrorPercentile": "the same error signal as ErrorStat",
-    "StopStat": "the measured joint and the target's position and <b>velocities</b> (a stop is a dwell at zero "
-                "commanded speed)",
+    "StopStat": "the measured joint and the target's position and <b>velocities</b> (a stop is where the "
+                "commanded speed sits at zero for a while)",
     "TimeOffset": "two joint streams; <code>robot_msgs.compare.estimate_time_offset</code> on the whole run",
     "CodeShare": "the measured stream's <code>channels[channel]</code> (moteus fault / limiter codes)",
     "Repeatability": "each repeat's stops (the stop kernel), the same stops across repeats",
-    "PerformanceGain": "any metric or alias, folded over each side's runs",
+    "PerformanceGain": "any metric (or named metric), scored over each side's runs",
 }
 OUTPUTS = {
     "ErrorStat": "a number in the signal's SI unit (rad, m for a tool, rad/s, N·m)",
     "ErrorPercentile": "a number in the signal's SI unit",
     "StopStat": "a number in the signal's unit (s for <code>settle</code>), a bool for <code>statistic=\"all\"</code>; "
-                "its occurrences are every stop",
+                "every stop is also kept, one by one",
     "TimeOffset": "seconds; across runs the median of the per-run offsets",
     "CodeShare": "a share in [0, 1]",
     "Repeatability": "the signal's SI unit (rad at a joint): ISO 9283 RP, the worst stop index",
     "PerformanceGain": "the inner metric's unit: nominal minus fitted (positive = the fit helped)",
 }
+# WHY "keeps while it runs" and not "state" (Zach, 2026-11-18: "I don't know what you mean by fold etc."): what a
+# metric adds up as samples arrive, in plain words
 STATE = {
-    "ErrorStat": "(Σe², n, max|e|, Σ|e|): four numbers, shared by rms, max_abs and mean_abs",
-    "ErrorPercentile": "every |e| seen so far (exact; merge concatenates)",
-    "StopStat": "closed stops plus the open dwell, so a stop split across chunks is found exactly",
-    "TimeOffset": "the run's chunks until close, then one offset per run",
-    "CodeShare": "(hits, rows)",
+    "ErrorStat": "four running sums (Σe², n, max|e|, Σ|e|), shared by rms, max_abs and mean_abs",
+    "ErrorPercentile": "every |e| seen so far (exact)",
+    "StopStat": "the stops so far plus the one still in progress, so a stop split across two chunks is found exactly",
+    "TimeOffset": "the run's samples until the run ends, then one offset per run",
+    "CodeShare": "(rows with a code, rows)",
     "Repeatability": "(command, each repeat's stop errors)",
-    "PerformanceGain": "(nominal value, fitted value)",
+    "PerformanceGain": "(nominal number, fitted number)",
+}
+# the cards' one-line descriptions in plain words (the classes' own descriptions are terser, for the API docs)
+PLAIN = {
+    "ErrorStat": "One number for how far measured is from target over the samples it reads: RMS, worst (max_abs) or "
+                 "mean absolute error.",
+    "ErrorPercentile": "A percentile of |target − measured| over the samples it reads (at 95, robot_msgs' p95_abs).",
+    "StopStat": "Something about every stop. A stop is where the plan holds still (zero commanded speed for at least "
+                "0.25 s after a move); its error is the mean of its last 50 ms. Pooled over every stop it sees.",
+    "TimeOffset": "How late the measured motion runs behind the command, one number per run (robot_msgs' "
+                  "estimate_time_offset). On this rack it reads below zero: each reply is stamped after its tick.",
+    "CodeShare": "The share of samples where the drive reported one of the given codes (moteus limiter or fault).",
+    "Repeatability": "ISO 9283 RP: the same command played again and again; how far apart the stops land (mean + k × "
+                     "spread, at the worst stop).",
+    "PerformanceGain": "Did a fitted model help? One metric on held-out runs, played with the nominal values and with "
+                       "the fitted ones: nominal minus fitted.",
 }
 OUT_SHORT = {"ErrorStat": "a number (SI)", "ErrorPercentile": "a number (SI)",
              "StopStat": "a number or a bool; every stop", "TimeOffset": "seconds", "CodeShare": "a share, 0 to 1",
@@ -134,7 +155,7 @@ def output_block(text: str) -> str:
     return f"<pre class='out{' wrap' if wrap else ''}'>{html.escape(text)}</pre>"
 
 
-def notebook(cell: dict) -> str:
+def notebook(cell: dict, script: str) -> str:
     """A cell as a notebook: statements highlighted, each output in a quieter band right under its statement.
     Statements with no output share a block, with the source's blank lines between ideas (docs/build_report.py's
     rule, so the report and the site read the same)."""
@@ -152,7 +173,7 @@ def notebook(cell: dict) -> str:
             group = []
     if group:
         blocks.append(f"<pre class='src{' gap' if group_gap else ''}'>{python(chr(10).join(group))}</pre>")
-    return f"<div class='notebook'>{''.join(blocks)}</div>"
+    return f"<div class='notebook' data-script='{script}'>{''.join(blocks)}</div>"
 
 
 def token_css() -> str:
@@ -174,16 +195,16 @@ def esc(value: object) -> str:
 # ---- the diagram: run -> metric (fold) -> value -> objective -> verdict, and runs -> summarize -> strata -----------
 
 LANE_ONE = (
-    ("Run", "robot_msgs streams", "target · state · plan"),
-    ("Metric", "frozen config, state fold", "update(state, chunk)"),
-    ("Value", "SI inside, unit at display", "values(state)"),
-    ("Objective", "≤ 1 mm on 100 % of stops", "outside compute()"),
-    ("Verdict", "pass · fail · not_run", "judge(stratum)"),
+    ("Run", "robot_msgs streams", "commanded vs measured"),
+    ("Metric", "math + fixed settings", "adds up samples"),
+    ("Number", "in its unit: deg, mm, ms", "values(...)"),
+    ("Objective", "≤ 1 mm on every stop", "kept apart from the math"),
+    ("Verdict", "pass · fail · not_run", "judge(group)"),
 )
 LANE_TWO = (
     ("Runs × N", "labels: station, rung", "real · sim · replay"),
-    ("summarize", "fold each run, merge", "by=station, rung"),
-    ("Stratum", "values · tails · shares", "n, p95, worst"),
+    ("summarize", "score each run, group them", "by=station, rung"),
+    ("Group", "numbers · spread · shares", "n, p95, worst"),
     ("Gate", "every objective passes", "Gate.judge()"),
     ("Ladder", "a verdict per cell", "highest_passing()"),
 )
@@ -220,8 +241,8 @@ def diagram(vertical: bool) -> str:
                     parts.append(_arrow(x - gap + 2, top + box_h / 2, x - 3, top + box_h / 2))
         middle = 8 + (box_w + gap) + box_w / 2
         parts.append(_arrow(middle, 36 + box_h + 4, middle, 226 - 4, dashed=True))
-        parts.append(f"<text class='dg-note' x='{middle + 10}' y='{36 + box_h + 58}'>the same fold, per run, "
-                     f"then merge states</text>")
+        parts.append(f"<text class='dg-note' x='{middle + 10}' y='{36 + box_h + 58}'>the same scoring, run by "
+                     f"run, then grouped</text>")
     else:
         width, box_w, box_h, gap = 360, 300, 76, 26
         x = (width - box_w) / 2
@@ -237,9 +258,9 @@ def diagram(vertical: bool) -> str:
             y += 30
         height = y
     return (f"<svg class='diagram {'tall' if vertical else 'wide'}' viewBox='0 0 {width} {height}' role='img' "
-            f"aria-label='A run goes into a metric, whose state folds chunk by chunk; compute gives a value with a "
-            f"unit; an objective outside compute turns it into a verdict. Many runs are summarized by station and "
-            f"rung into strata that gates judge.'>{marker}{''.join(parts)}</svg>")
+            f"aria-label='A run goes into a metric, which adds up its samples as they come and gives a number "
+            f"with a unit; an objective kept apart from the math turns it into a verdict. Many runs are scored and "
+            f"grouped by station and rung, and gates judge each group.'>{marker}{''.join(parts)}</svg>")
 
 
 # ---- the catalog -------------------------------------------------------------------------------------------------
@@ -311,6 +332,7 @@ def used_by(parts: list) -> dict[str, list[str]]:
 
 
 def catalog_card(cls: type, cell: dict, used: list[str], group: str) -> str:
+    script = f"site-catalog-{cls.__name__.lower()}"
     name = cls.__name__
     function = FUNCTION[name]
     assert hasattr(functional, function), function
@@ -319,29 +341,35 @@ def catalog_card(cls: type, cell: dict, used: list[str], group: str) -> str:
     value_type = "number · bool (statistic=\"all\")" if name == "StopStat" else cls.value_type
     references = "".join(f"<li>{esc(reference)}</li>" for reference in cls.references)
     used_text = " ".join(f"<span class='tag'>{esc(item)}</span>" for item in used) if used else (
-        "<span class='muted'>none yet: configure it in your part's metrics</span>")
+        "<span class='muted'>none yet: give it settings and a name in your part's metrics</span>")
     image = f"catalog-{name.lower()}.png"
     caption = "a sealed sim's held-out runs" if name == "PerformanceGain" else "CAN 11's real round-8 runs"
     return f"""
 <article class="card" id="metric-{name.lower()}">
   <p class="eyebrow">{esc(group)}</p>
-  <header><h4>{name}</h4><span class="chip {'live' if live else 'end'}">{'runs live' if live else 'end of run'}</span>
+  <header><h4>{name}</h4><span class="chip {'live' if live else 'end'}">{'works live' if live else 'needs the whole run'}</span>
     <span class="chip">view: {esc(cls.hint)}</span></header>
-  <p class="desc">{esc(cls.description)}</p>
+  <p class="desc">{esc(PLAIN[name])}</p>
   {figure(image, f"Its stock view, drawn by <code>plot()</code> ({caption})")}
   <div class="io">
     <div><b>In</b> <code>{cls.Input.__name__}</code> · {INPUTS[cls.Input.__name__]}<br><span class="muted">Reads
       {READS[name]}.</span></div>
-    <div><b>Out</b> {esc(value_type)} · {OUTPUTS[name]}.<br><span class="muted">State: {esc(STATE[name])}.</span></div>
+    <div><b>Out</b> {esc(value_type)} · {OUTPUTS[name]}.<br><span class="muted">Keeps while it runs: {esc(STATE[name])}.</span></div>
   </div>
   <p class="twin"><b>Function</b> <code>functional.{function}{esc(signature)}</code></p>
   <p class="twin"><b>In the catalog</b> {used_text}</p>
   <details><summary>Config: {len(dataclasses.fields(cls))} fields</summary><div class="scroll"><table class="config">
     <thead><tr><th>field</th><th>default</th><th>values</th></tr></thead><tbody>{config_rows(cls)}</tbody></table>
     </div></details>
-  <details><summary>The code that drew the picture ({cell['seconds']} s)</summary>{notebook(cell)}</details>
+  <details><summary>The code that drew the picture ({cell['seconds']} s)</summary><p class="muted run-note">One
+    script on its own, run from a clone's root. {RUN_NOTE[name]}</p>{notebook(cell, script)}</details>
   <details><summary>References</summary><ul>{references}</ul></details>
 </article>"""
+
+
+SEALED_NOTE = ("It reads <code>tests/data/sealed_ladder_held_out.json</code>, which is in the repo, so it runs in any "
+               "clone.")
+RUN_NOTE = {name: (SEALED_NOTE if name == "PerformanceGain" else gallery.RECORDINGS) for name in gallery.CATALOG}
 
 
 def alias_table(part) -> tuple[str, int, int]:
@@ -358,27 +386,51 @@ def alias_table(part) -> tuple[str, int, int]:
                 "rigid_body_chain":
             continue
         number = state_numbers[collection.key_of[name]]
-        live = "live" if alias.metric.live else "end of run"
+        live = "live" if alias.metric.live else "whole run"
         signal = "/".join(alias.signal)
         scale = f" ×{alias.scale:.4g}" if alias.scale not in (1.0,) else ""
         rows.append(f"<tr><td><b>{esc(name)}</b></td><td>{esc(alias.unit or '—')}{esc(scale)}</td>"
                     f"<td><code>{esc(short(alias.metric))}</code></td><td><code>{esc(signal)}</code></td>"
                     f"<td>{esc(alias.across)}</td><td>{live}</td><td class='num'>#{number}</td>"
                     f"<td class='muted note'>{esc(alias.note)}</td></tr>")
-    table = (f"<div class='scroll'><table class='aliases'><thead><tr><th>alias</th><th>unit · SI→unit</th>"
-             f"<th>= base + frozen config</th><th>reads</th><th>across runs</th><th>runs</th><th>state</th>"
-             f"<th>note</th></tr></thead><tbody>{''.join(rows)}</tbody></table></div>")
+    table = (f"<div class='scroll'><table class='aliases'><thead><tr><th>name</th><th>unit · SI→unit</th>"
+             f"<th>stock metric + settings</th><th>reads</th><th>across runs</th><th>works</th>"
+             f"<th>computed as</th><th>note</th></tr></thead><tbody>{''.join(rows)}</tbody></table></div>")
     return table, len(collection.aliases), collection.computations
 
 
 # ---- the build ---------------------------------------------------------------------------------------------------
 
-def run_cells(cells: list[tuple[str, str, str]], namespace: dict) -> Session:
-    session = Session(namespace)
-    for label, caption, code in cells:
-        started = time.perf_counter()
-        session.cell(label, caption, code)
-        print(f"  {label}: {time.perf_counter() - started:.1f} s", flush=True)
+@contextlib.contextmanager
+def clone_root():
+    """A working folder laid out like a clone's root (``tests/`` and ``website/`` linked in), entered for the length
+    of a script; the images the script saves there are moved into the site's img/ folder afterwards."""
+
+    previous = Path.cwd()
+    with tempfile.TemporaryDirectory(prefix="robot-metrics-site-") as folder:
+        work = Path(folder)
+        for name in ("tests", "website"):
+            (work / name).symlink_to(ROOT / name, target_is_directory=True)
+        os.chdir(work)
+        try:
+            yield work
+        finally:
+            os.chdir(previous)
+            for image in work.glob("*.png"):
+                shutil.move(str(image), IMG / image.name)
+
+
+def run_script(script: str, cells: list[tuple[str, str, str]]) -> Session:
+    """One script the page shows as one piece, run in a fresh namespace with nothing put in it (WHY: a reader runs it
+    the same way; ``tests/test_shown_examples.py`` re-runs it alone in a fresh ``python -I``)."""
+
+    session = Session({"__name__": "__main__"})
+    with clone_root():
+        for label, caption, code in cells:
+            started = time.perf_counter()
+            session.cell(label, caption, code)
+            print(f"  {script} · {label}: {time.perf_counter() - started:.1f} s", flush=True)
+    session.script = script
     return session
 
 
@@ -395,8 +447,8 @@ def summaries(pendulum: Session, fivebar: Session, ur5e: Session) -> dict:
 
     gates = pendulum.namespace["gates"]
     pendulum_rows = []
-    for station, strata in sorted(pendulum.namespace["strata_by_station"].items()):
-        for (_, rung), stratum in sorted(strata.items()):
+    for station, groups in sorted(pendulum.namespace["groups_by_station"].items()):
+        for (_, rung), stratum in sorted(groups.items()):
             tail = stratum.tails["tip stop error"]
             pendulum_rows.append({
                 "station": station, "rung": rung, "runs": stratum.values["runs"],
@@ -415,7 +467,7 @@ def summaries(pendulum: Session, fivebar: Session, ur5e: Session) -> dict:
             fivebar_rows.append({"source": source, "rung": rung,
                                  **{name: finite(value) for name, value in stratum.values.items()}})
     ur5e_rows = []
-    for (controller, speed), stratum in sorted(ur5e.namespace["strata"].items()):
+    for (controller, speed), stratum in sorted(ur5e.namespace["groups"].items()):
         ur5e_rows.append({"controller": controller, "speed": speed,
                           **{name: finite(value) for name, value in stratum.values.items()}})
     return {
@@ -463,6 +515,7 @@ h2 { font-size:24px; margin:8px 0 6px; } h3 { font-size:18px; margin:26px 0 8px;
 .glance { display:grid; grid-template-columns:minmax(0,1fr); gap:10px; margin:2px 0 10px; }
 .glance > div { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:10px 14px; }
 .glance-code h2 { margin-top:0; }
+.run-note { font-size:13.5px; margin:2px 0 6px; }
 .glance b.k { display:block; font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--accent); }
 .glance p { margin:4px 0 0; font-size:14.5px; }
 svg.diagram { width:100%; height:auto; display:block; margin:10px 0 6px; }
@@ -542,22 +595,26 @@ footer { border-top:1px solid var(--line); margin-top:30px; padding:18px 0 40px;
 
 
 def api_table() -> str:
+    # WHY "tally" (Zach, 2026-11-18: "I don't know what you mean by fold etc."): the plain word for what the API calls
+    # a state, named at first use; the API's own names are unchanged
     rows = (
-        ("one recording", "<code>collection.fold(run)</code> · <code>metric(target, measured)</code>",
-         "a closed state · a value in SI"),
-        ("a live stream", "<code>state = collection.update(state, chunk)</code>, then <code>close(state)</code>",
-         "the same state as offline"),
-        ("the values", "<code>collection.values(state)</code>", "{alias: value} in each alias's display unit"),
+        ("one recording", "<code>tally = collection.fold(run)</code>",
+         "every sample run through the metrics once; a <b>tally</b> is what they have added up"),
+        ("a live feed", "<code>tally = collection.empty()</code>, then <code>tally = collection.update(tally, "
+         "chunk)</code> per chunk, then <code>collection.close(tally)</code> when the run ends",
+         "the same tally as the whole recording gives"),
+        ("the numbers", "<code>collection.values(tally)</code>", "{name: number}, each in its own unit"),
         ("many runs", "<code>summarize(collection, runs, by=(\"station\", \"rung\"))</code>",
-         "strata: values, tails (n, median, p95, worst), Wilson shares"),
-        ("a target", "<code>Objective(alias, \"&lt;=\", 1.0, share=1.0).judge(stratum)</code>",
-         "a Verdict: pass · fail · not_run, with its owner"),
-        ("a picture", "<code>collection.view(alias, states)</code> → <code>plot()</code> · W&amp;B · Rerun",
+         "one group per (station, rung): its numbers, the spread of every stop (n, median, p95, worst), and pass "
+         "shares with a Wilson interval"),
+        ("a target", "<code>Objective(name, \"&lt;=\", 1.0, share=1.0).judge(group)</code>",
+         "a Verdict: pass · fail · not_run, with who owns the target"),
+        ("a picture", "<code>collection.view(name, tallies)</code> → <code>plot()</code> · W&amp;B · Rerun",
          "(fig, ax), a W&amp;B payload, an .rrd"),
         ("one call", "<code>functional.error_stat(target, measured, statistic=\"rms\")</code>",
-         "the class run once: an SI number"),
-        ("a stored value", "<code>collection.records(state, run)</code>",
-         "MetricRecord: value, unit, base, config, version"),
+         "one number in SI, no setup"),
+        ("a stored value", "<code>collection.records(tally, run)</code>",
+         "MetricRecord: the number, its unit, the metric, its settings, the version"),
     )
     body = "".join(f"<tr><td>{have}</td><td>{call}</td><td>{get}</td></tr>" for have, call, get in rows)
     return (f"<div class='scroll'><table class='api'><thead><tr><th>you have</th><th>you call</th><th>you get</th>"
@@ -565,11 +622,11 @@ def api_table() -> str:
 
 
 def example_section(anchor: str, title: str, chip: str, chip_class: str, intro: str, tiles: list[tuple[str, str]],
-                    figures: list[tuple[str, str]], session: Session, data_file: str) -> str:
+                    figures: list[tuple[str, str]], session: Session, data_file: str, needs: str) -> str:
     tile_html = "".join(f"<div class='tile'><b>{esc(value)}</b><span>{esc(label)}</span></div>" for value, label in tiles)
     figure_html = "".join(figure(name, caption) for name, caption in figures)
     cells = "".join(f"<h4 class='cell-title'>{index}. {esc(cell['label'])}</h4>"
-                    f"<p class='cell-caption'>{esc(cell['caption'])}</p>{notebook(cell)}"
+                    f"<p class='cell-caption'>{esc(cell['caption'])}</p>{notebook(cell, session.script)}"
                     for index, cell in enumerate(session.cells, start=1))
     return f"""
 <div class="example" id="{anchor}">
@@ -578,6 +635,8 @@ def example_section(anchor: str, title: str, chip: str, chip_class: str, intro: 
   <div class="tiles">{tile_html}</div>
   <div class="figs">{figure_html}</div>
   <details open><summary>The code, as it ran ({sum(float(cell['seconds']) for cell in session.cells):.1f} s)</summary>
+    <p class="muted run-note">One script, top to bottom, run from a clone's root: each step continues the one before
+    it. {needs}</p>
     {cells}</details>
   <p class="muted">Numbers as data: <a href="data/{data_file}">data/{data_file}</a></p>
 </div>"""
@@ -588,21 +647,13 @@ def main() -> None:
         shutil.rmtree(OUT)
     IMG.mkdir(parents=True)
     (OUT / "data").mkdir()
-    namespace_base = {"MEDIA": IMG, "TESTS_DATA": str(ROOT / "tests" / "data")}
-
-    print("glance", flush=True)
-    glance = run_cells([gallery.GLANCE], dict(namespace_base))
-    print("catalog", flush=True)
-    catalog_session = run_cells([gallery.CATALOG_SETUP], dict(namespace_base))
+    glance = run_script("site-glance", [gallery.GLANCE])
+    catalog_cells = {}
     for name, code in gallery.CATALOG.items():
-        catalog_session.cell(name, "", code)
-    catalog_cells = {cell["label"]: cell for cell in catalog_session.cells}
-    print("pendulum", flush=True)
-    pendulum = run_cells(gallery.PENDULUM, dict(namespace_base))
-    print("five-bar", flush=True)
-    fivebar = run_cells(gallery.FIVEBAR, dict(namespace_base))
-    print("ur5e", flush=True)
-    ur5e = run_cells(gallery.UR5E, dict(namespace_base))
+        catalog_cells[name] = run_script(f"site-catalog-{name.lower()}", [(name, "", code)]).cells[0]
+    pendulum = run_script("site-pendulum", gallery.PENDULUM)
+    fivebar = run_script("site-fivebar", gallery.FIVEBAR)
+    ur5e = run_script("site-ur5e", gallery.UR5E)
 
     for file_name, payload in summaries(pendulum, fivebar, ur5e).items():
         (OUT / "data" / file_name).write_text(json.dumps(payload, indent=1, default=str) + "\n", encoding="utf-8")
@@ -632,18 +683,21 @@ def main() -> None:
     alias_html = []
     for part, intro in zip(parts, (
             "The servo judged at its output: the plan at each reply's instant vs the reply.",
-            "An assembly: the servo plus a 339 mm lever. Every tip row is the servo's state read through the lever "
-            "(<code>Alias.through(..., scale_by=\"lever_m\")</code>), so the arm adds no computation of its own.",
+            "An assembly: the servo plus a 339 mm lever. Every tip row is a servo number scaled through the lever to "
+            "millimetres at the tip (<code>Alias.through(..., scale_by=\"lever_m\")</code>), so the arm adds no "
+            "computation of its own.",
             "A rigid chain (the five-bar, or any serial arm): each joint's RMS and the tool's position error from two "
             "PoseTrajectories.")):
         table, alias_count, state_count = alias_table(part)
         children = "".join(f" + the {child.name}'s {len(child.collection().aliases)}" for child in part.children
                            if part.part_type != "rigid_body_chain")
         mix = f" (its {len(part.aliases)}{children})" if children else ""
-        alias_html.append(f"<h3><code>{part.part_type}</code> <span class='muted'>· {alias_count} aliases over "
-                          f"{state_count} states{mix}</span></h3><p class='section-lede'>{intro}</p>{table}")
+        alias_html.append(f"<h3><code>{part.part_type}</code> <span class='muted'>· {alias_count} named numbers, "
+                          f"{state_count} computations{mix}</span></h3><p class='section-lede'>{intro}</p>{table}")
     gates = catalog.pendulum_gates()
-    gate_rows = "".join(f"<tr><td><b>{esc(name)}</b></td><td>{esc(objective.title)}</td><td>{esc(objective.on)}</td>"
+    judged_on = {"value": "the group's number", "items": "every stop, one by one"}
+    gate_rows = "".join(f"<tr><td><b>{esc(name)}</b></td><td>{esc(objective.title)}</td>"
+                        f"<td>{esc(judged_on.get(objective.on, objective.on))}</td>"
                         f"<td class='muted'>{esc(objective.owner)}</td></tr>"
                         for name, gate in gates.items() for objective in gate.objectives)
 
@@ -651,11 +705,11 @@ def main() -> None:
     pendulum_ns, fivebar_ns, ur5e_ns = pendulum.namespace, fivebar.namespace, ur5e.namespace
     every_stop = robot_metrics.highest_passing(pendulum_ns["passed_by_gate"]["tip stop (every stop)"])
     tracks = robot_metrics.highest_passing(pendulum_ns["passed_by_gate"]["tracks"])
-    can11_worst = max(stratum.tails["tip stop error"].worst for stratum in pendulum_ns["can11"].values())
+    can11_worst = max(group.tails["tip stop error"].worst for group in pendulum_ns["can11"].values())
     fivebar_real = fivebar_ns["real"]
     fivebar_best = min(stratum.values["tool tracking RMS"] for stratum in fivebar_real.values())
     fivebar_worst = max(stratum.values["tool worst"] for stratum in fivebar_real.values())
-    ur5e_strata = ur5e_ns["strata"]
+    ur5e_strata = ur5e_ns["groups"]
     pd_rms = ur5e_strata[("pd", 1.0)].values["tool tracking RMS"]
     ff_rms = ur5e_strata[("pd+ff", 1.0)].values["tool tracking RMS"]
     ff_pass = [key for key, stratum in ur5e_strata.items() if ur5e_ns["tool_gate"].judge(stratum).verdict == "pass"]
@@ -663,7 +717,7 @@ def main() -> None:
     pendulum_html = example_section(
         "pendulum", "1-DOF pendulum · six stations", "REAL · round 8", "real",
         "The 1-DOF test rack: six integrated servos, each swinging a lever, each played on a six-rung speed ladder "
-        "(five repeats plus two held-out plays per rung). Recordings stay private; the page shows the code that "
+        "(five repeats plus two held-out plays per rung). The recordings are private; the page shows the code that "
         "scored them, its output, and the summary as data.",
         [(str(len(pendulum_ns["runs"])), "real plays scored"),
          (f"{len(pendulum_ns['stations'])} × 6", "stations × rungs"),
@@ -671,7 +725,7 @@ def main() -> None:
          (f"{can11_worst:.2f} mm", "CAN 11's worst stop at the tip")],
         [("pendulum-can11-tip-stops.png", "Every stop at CAN 11's tip by rung, against 1 mm: the tail the median "
           "hides."), ("pendulum-tracking-by-rung.png", "Tracking RMS by rung for every station, against the 0.5° "
-          "gate.")], pendulum, "pendulum-round8.json")
+          "gate.")], pendulum, "pendulum-round8.json", gallery.RECORDINGS)
     fivebar_html = example_section(
         "fivebar", "Five-bar arm · real and its sim twin", "REAL + SIM · 2026-11-10", "real",
         "The bam_fb five-bar (two motors, a closed chain) on a five-rung tool-speed ladder, played on the real arm "
@@ -681,7 +735,8 @@ def main() -> None:
          (f"{fivebar_worst:.1f} mm", "worst real tool error")],
         [("fivebar-tool-rms-by-speed.png", "Tool tracking RMS against tool speed, real and sim."),
          ("fivebar-tool-path.png", "One rung's tool path in the plane, commanded and measured.")],
-        fivebar, "fivebar-ladder.json")
+        fivebar, "fivebar-ladder.json", "It reads the five-bar ladder's recordings, which are not public (point "
+        "<code>ROBOT_METRICS_FIVEBAR_LADDER</code> at a copy).")
     ur5e_html = example_section(
         "ur5e", "UR5e · six joints, simulated", "SIMULATED · MuJoCo", "sim",
         "No real UR5e run exists: this arm is MuJoCo Menagerie's UR5e model under its own PD position servos "
@@ -692,7 +747,9 @@ def main() -> None:
          (f"{len(ff_pass)} of {len(ur5e_strata)}", "cells with the worst tool error ≤ 1 mm")],
         [("ur5e-tool-rms-by-speed.png", "Tool tracking RMS by speed, both controllers (log scale). SIMULATED."),
          ("ur5e-shoulder-lift-stops.png", "Every stop of the shoulder lift joint at full speed. SIMULATED.")],
-        ur5e, "ur5e-sim.json")
+        ur5e, "ur5e-sim.json", "It needs <code>pip install mujoco</code> and MuJoCo Menagerie: set "
+        "<code>MENAGERIE</code> to a mujoco_menagerie clone, or <code>pip install robot_descriptions</code>, which "
+        "fetches it. Nothing private.")
 
     page = f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -705,41 +762,45 @@ robot_msgs streams, live or offline, with the targets kept outside compute().">
 <header class="hero"><div class="wrap">
   <p class="eyebrow">v{VERSION} · MIT · Python ≥ 3.11 · runtime: numpy + robot_msgs</p>
   <h1><code>robot_metrics</code></h1>
-  <p class="lede">Performance metrics for robot parts. Hand it robot_msgs streams (a whole recording, or a live stream
-  chunk by chunk) and it folds them into values with units. A metric is math plus a frozen config; the target stays
-  outside, where an objective turns a value into a verdict.</p>
+  <p class="lede">Performance metrics for robot parts. Hand it robot_msgs streams (a whole recording, or a live feed
+  a few samples at a time) and it turns them into numbers with units: tracking error, stop error, lag, repeatability.
+  A metric is math plus fixed settings; the pass/fail target is kept apart, where an objective turns a number into a
+  verdict.</p>
   <div class="links"><a href="{REPO}">GitHub</a><a href="#install">Install</a><a href="#catalog">Catalog</a>
   <a href="#gallery">Gallery</a><a href="{REPO}/blob/main/docs/peps/0001-robot-metrics-v0.md">Design (PEP 0001)</a></div>
 </div></header>
 <nav class="toc"><div class="wrap"><a href="#glance">At a glance</a><a href="#api">API</a><a href="#catalog">Catalog</a>
-<a href="#aliases">Aliases</a><a href="#gallery">Gallery</a><a href="#install">Install</a></div></nav>
+<a href="#aliases">Per part</a><a href="#gallery">Gallery</a><a href="#install">Install</a></div></nav>
 <main class="wrap">
 
 <section id="glance">
   <div class="split">
     <div class="glance">
-      <div><b class="k">What goes in</b><p>robot_msgs streams, named in a <code>Run</code>: <code>target</code> and
-        <code>state</code> (<code>JointTrajectory</code>), the <code>plan</code> on its own ticks, a tool's
-        <code>PoseTrajectory</code>, plus labels (station, rung). A whole recording, or the same run in chunks.</p></div>
-      <div><b class="k">The functional core</b><p>A metric is a frozen dataclass: identity = base + config. Its state is a
-        value: <code>empty</code> → <code>update</code> → <code>merge</code> → <code>close</code> →
-        <code>compute</code>. Nothing hidden is mutated; a plain function sits beside each class.</p></div>
-      <div><b class="k">Offline = online</b><p>Live is the fold, chunk by chunk; offline is the same fold once. A
-        stop split across two chunks is found exactly. Runs merge into rungs, stations, a deployment.</p></div>
-      <div><b class="k">What comes out</b><p>Values in SI inside, shown in each alias's unit (deg, mm, ms, %); every
-        stop as an occurrence; a record with identity and version. Targets live on <code>Objective</code>s, outside
-        <code>compute()</code>: pass · fail · not_run.</p></div>
+      <div><b class="k">What goes in</b><p>Recordings as robot_msgs streams in a <code>Run</code>: the
+        <code>target</code> and the measured <code>state</code> (<code>JointTrajectory</code>), the <code>plan</code>
+        on its own ticks, a tool's <code>PoseTrajectory</code>, plus labels such as station and rung.</p></div>
+      <div><b class="k">What a metric is</b><p>A small settings object, such as <code>ErrorStat(statistic="rms")</code>.
+        It keeps a running <b>tally</b> as samples arrive: start empty, add samples (<code>update</code>), end the run
+        (<code>close</code>), read the numbers (<code>values</code>). <code>fold(run)</code> does all of that for a
+        whole recording in one call. A plain function sits beside each class for one-off use.</p></div>
+      <div><b class="k">Whole recording or live: same numbers</b><p>Live: feed the same recording a few samples at a
+        time and you get the same numbers as scoring it whole, even for a stop split across two chunks. Tallies from
+        many runs add up into a rung, a station, a deployment.</p></div>
+      <div><b class="k">What comes out</b><p>Numbers in each metric's display unit (deg, mm, ms, %), computed in SI
+        underneath; every stop kept one by one; a record of the metric, its settings and version. Pass/fail targets
+        live on <code>Objective</code>s, apart from the math: pass · fail · not_run.</p></div>
     </div>
     <div class="glance-code"><h2>{esc(glance.cells[0]['label'])}</h2>
-      <p class="cell-caption">{esc(glance.cells[0]['caption'])}</p>{notebook(glance.cells[0])}</div>
+      <p class="cell-caption">{esc(glance.cells[0]['caption'])}</p><p class="muted run-note">One script on its own.
+      {gallery.RECORDINGS}</p>{notebook(glance.cells[0], glance.script)}</div>
   </div>
   {diagram(vertical=False)}{diagram(vertical=True)}
   <div class="two" id="api">
     <div><h3>The API in one table</h3>{api_table()}</div>
-    <div><h3>Math only, meaning from the data</h3><p class="cell-caption">A stock metric is math: one
-      <code>ErrorStat</code> serves servo tracking, the tool error of a five-bar and a feed-forward residual, by the
-      streams its alias hands it. A new row is a configured stock metric, never a new function; aliases with one
-      identity compute once.</p>
+    <div><h3>Math only; the meaning comes from the data</h3><p class="cell-caption">A stock metric is just math:
+      one <code>ErrorStat</code> measures a servo's tracking, a five-bar's tool error or a feed-forward residual,
+      depending on which streams it is given. A new number is a stock metric with new settings and a name (an
+      <code>Alias</code>), never a new function; two names for the same metric and settings compute once.</p>
       <h3>Layering</h3><p class="cell-caption"><code>robot_msgs</code> ← <code>robot_metrics</code> ← your tools
       (diagnostics, sim-to-real, a part catalog). The core imports numpy, robot_msgs and the stdlib; matplotlib,
       wandb and rerun-sdk only inside <code>plot()</code> and the adapters.</p></div>
@@ -748,22 +809,24 @@ robot_msgs streams, live or offline, with the targets kept outside compute().">
 
 <section id="catalog">
   <h2>Catalog <span class="muted">· {sum(len(names) for _, _, names in GROUPS)} stock metrics</span></h2>
-  <p class="section-lede">Every stock metric, grouped. Each card: its config, what it reads, what it returns,
-  whether it runs live, its function twin, and its stock view, drawn by <code>plot()</code> on CAN 11's real
-  round-8 runs (the performance gain on a sealed sim). {esc(' · '.join(counts))}.</p>
+  <p class="section-lede">Every stock metric, grouped. Each card: what it measures, what it reads, what it returns,
+  whether it works on a live feed, the plain function beside it, its settings, and its stock picture, drawn by
+  <code>plot()</code> on CAN 11's real round-8 runs (the performance gain on a sealed sim). Each card's code is one
+  script on its own. {esc(' · '.join(counts))}.</p>
   {''.join(group_html)}
 </section>
 
 <section id="aliases">
-  <h2>Aliases, per part type</h2>
-  <p class="section-lede">A semantic name is an alias: a label, a display unit and the streams it reads, over a
-  configured stock metric. Its identity is the metric's, so aliases with one identity share one state, and every
-  <code>StopStat</code> on one signal shares one pass of the stop kernel (the <b>state</b> column).</p>
+  <h2>Named numbers, per part type</h2>
+  <p class="section-lede">Each row is a name, a display unit and the streams it reads, over a stock metric with its
+  settings (in code, an <code>Alias</code>). Rows with the same metric and settings are computed once, and every
+  <code>StopStat</code> on one signal shares one pass of the stop finder: rows with the same number in
+  <b>computed as</b> are computed together.</p>
   {''.join(alias_html)}
-  <h3>Gates <span class="muted">· objectives outside compute()</span></h3>
-  <p class="section-lede">Round 8's three verdicts per (station, rung) cell. Each objective names its owner; a new
-  target recomputes nothing.</p>
-  <div class="scroll"><table><thead><tr><th>gate</th><th>objective</th><th>on</th><th>owner</th></tr></thead>
+  <h3>Gates <span class="muted">· pass/fail targets, kept apart from the math</span></h3>
+  <p class="section-lede">Round 8's three verdicts per (station, rung) cell. Each target names who owns it; changing
+  a target recomputes nothing.</p>
+  <div class="scroll"><table><thead><tr><th>gate</th><th>target</th><th>judged on</th><th>owner</th></tr></thead>
   <tbody>{gate_rows}</tbody></table></div>
 </section>
 

@@ -57,8 +57,11 @@ json.dump(outputs, open(out, "w", encoding="utf-8"))
 
 
 def _load(name: str, path: Path):
+    if name in sys.modules:
+        return sys.modules[name]
     spec = importlib.util.spec_from_file_location(name, path)
     module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module      # WHY: a dataclass in the module looks its module up here
     spec.loader.exec_module(module)
     return module
 
