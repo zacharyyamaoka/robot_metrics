@@ -1,0 +1,39 @@
+[build-system]
+# WHY >=1.27: the first hatchling that writes PEP 639 metadata (robot_models' template).
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "robot-metrics"
+version = "0.0.1"
+description = "Performance metrics for robot parts: torchmetrics' shape with numpy inside, over robot_msgs streams, live or offline, with the gates kept outside compute()."
+readme = "README.md"
+authors = [{ name = "Zach Yamaoka" }]
+requires-python = ">=3.11"
+# WHY robot_msgs + numpy only (Zach, 2026-11-17, "dependency-free runtime cores"; robot_msgs layering 2026-11-12): the
+# metric core must import with nothing heavier, so robot_models, RobotDx and sim2real can all depend on it. matplotlib,
+# wandb and rerun-sdk are extras, imported only inside their adapters.
+dependencies = ["robot-msgs>=0.3.0", "numpy>=1.26"]
+
+[project.optional-dependencies]
+viz = ["matplotlib>=3.8"]
+wandb = ["wandb>=0.19"]
+# WHY the pin: robot_msgs' own rerun extra pins 0.40.0 (an .rrd needs a viewer at least as new).
+rerun = ["rerun-sdk==0.40.0"]
+test = ["pytest>=8", "matplotlib>=3.8"]
+
+[tool.uv.sources]
+# WHY absolute: robot_models names it the same way (a consumer's lock took a relative source over, 2026-11-12).
+robot-msgs = { path = "/home/bam/robot_msgs", editable = true }
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/robot_metrics"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "archive: reads round 8 or the five-bar ladder on /archive (skipped when it is absent)",
+]
+
+[tool.ruff]
+line-length = 120
