@@ -5,6 +5,11 @@
 What it runs, live: the test suite (green, at HEAD), the same tests against the tests-first commit's tree (red), the
 parity table (the tests' own oracle and scoring), two wrong rulers under that oracle (they must go red), the brief's
 isolation command, and the usage session on CAN 11's round-8 runs (its plot() images are embedded).
+
+The session's Python is highlighted here with Pygments (it arrives with the test extra: pytest depends on it), inline
+CSS only. WHY one statement then its output, the API at a glance first (Zach, /rate bad 2026-11-18): "please show this
+python text with syntax highlighting ... make it more like line by line so I can see the output of each line ... I am
+not seeing the API design at a glance".
 """
 
 from __future__ import annotations
@@ -19,6 +24,10 @@ import tarfile
 import tempfile
 import time
 from pathlib import Path
+
+from pygments import highlight
+from pygments.formatters import HtmlFormatter
+from pygments.lexers import PythonLexer
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / "docs"), str(ROOT / "tests")]
@@ -150,13 +159,57 @@ def pre(text: str) -> str:
     return f"<pre>{html.escape(text)}</pre>"
 
 
+LEXER, FORMATTER = PythonLexer(), HtmlFormatter(nowrap=True)
+LIGHT, DARK = "default", "github-dark"          # Pygments styles: token colours only, the page sets the background
+WRAP_OVER = 100                                 # a one-line output longer than this wraps; a table scrolls instead
+
+
+def python(code: str) -> str:
+    return highlight(code, LEXER, FORMATTER).rstrip("\n")
+
+
+def output(text: str) -> str:
+    wrap = "\n" not in text and len(text) > WRAP_OVER
+    return f"<pre class='out{' wrap' if wrap else ''}'>{html.escape(text)}</pre>"
+
+
+def notebook(cell: dict) -> str:
+    """A cell as a notebook: its statements highlighted, each output in a quieter band right under its statement.
+    Statements with no output share one block, with the source's blank lines between ideas; a blank line that falls
+    right after an output becomes the next block's extra top space (``gap``)."""
+
+    blocks, group, group_gap = [], [], False
+    for statement in cell["statements"]:
+        if not group:
+            group_gap = statement["gap_before"] and bool(blocks)
+        elif statement["gap_before"]:
+            group.append("")
+        group.append(statement["code"])
+        if statement["output"]:
+            blocks.append(f"<pre class='src{' gap' if group_gap else ''}'>{python(chr(10).join(group))}</pre>")
+            blocks.append(output(statement["output"]))
+            group = []
+    if group:
+        blocks.append(f"<pre class='src{' gap' if group_gap else ''}'>{python(chr(10).join(group))}</pre>")
+    return f"<div class='notebook'>{''.join(blocks)}</div>"
+
+
+def token_css() -> str:
+    light = HtmlFormatter(style=LIGHT).get_token_style_defs(".notebook .src")
+    dark_auto = HtmlFormatter(style=DARK).get_token_style_defs(':root:not([data-theme="light"]) .notebook .src')
+    dark_forced = HtmlFormatter(style=DARK).get_token_style_defs(':root[data-theme="dark"] .notebook .src')
+    return "\n".join([*light, "@media (prefers-color-scheme: dark) {", *dark_auto, "}", *dark_forced])
+
+
 CSS = """
 :root { --bg:#fbfaf7; --panel:#ffffff; --ink:#1d1f23; --muted:#5d6470; --line:#e3e0d8; --accent:#2f6f4f;
-        --bad:#b03a2e; --code:#f3f1ec; --chip:#e8f2ec; }
+        --bad:#b03a2e; --code:#f3f1ec; --chip:#e8f2ec; --out-bg:#f3f1ec; --out-ink:#4f5661; --out-rule:#d3cec2; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#16181b; --panel:#1e2125; --ink:#e7e5e0;
-        --muted:#a3a9b2; --line:#33373d; --accent:#7cc39b; --bad:#ec8b7f; --code:#24272c; --chip:#22352b; } }
+        --muted:#a3a9b2; --line:#33373d; --accent:#7cc39b; --bad:#ec8b7f; --code:#24272c; --chip:#22352b;
+        --out-bg:#181a1d; --out-ink:#a3a9b2; --out-rule:#3d4249; } }
 :root[data-theme="dark"] { --bg:#16181b; --panel:#1e2125; --ink:#e7e5e0; --muted:#a3a9b2; --line:#33373d;
-        --accent:#7cc39b; --bad:#ec8b7f; --code:#24272c; --chip:#22352b; }
+        --accent:#7cc39b; --bad:#ec8b7f; --code:#24272c; --chip:#22352b; --out-bg:#181a1d; --out-ink:#a3a9b2;
+        --out-rule:#3d4249; }
 * { box-sizing:border-box; }
 body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif; }
 main { max-width:1080px; margin:0 auto; padding:28px 16px 64px; }
@@ -176,7 +229,14 @@ pre { background:var(--code); border:1px solid var(--line); border-radius:8px; p
   font:12.5px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace; white-space:pre; margin:6px 0 12px; }
 details { margin:8px 0; } summary { cursor:pointer; font-weight:600; }
 code { background:var(--code); padding:1px 5px; border-radius:4px; font-size:13px; }
-.cell-caption { color:var(--muted); margin:2px 0 4px; }
+.cell-caption { color:var(--muted); margin:2px 0 6px; }
+.notebook { background:var(--panel); border:1px solid var(--line); border-radius:8px; overflow:hidden; margin:6px 0 18px; }
+.notebook pre { margin:0; border:0; border-radius:0; overflow-x:auto; max-width:100%; }
+.notebook pre.src { background:var(--panel); color:var(--ink); padding:8px 14px; font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; }
+.notebook pre.src.gap { padding-top:20px; }
+.notebook pre.out { background:var(--out-bg); color:var(--out-ink); border-left:3px solid var(--out-rule); padding:5px 14px 6px 11px;
+  font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace; }
+.notebook pre.out.wrap { white-space:pre-wrap; overflow-wrap:anywhere; }
 ul { padding-left:20px; } li { margin:3px 0; }
 .wrap { overflow-x:auto; }
 """
@@ -225,13 +285,14 @@ def main() -> None:
     highest = ", ".join(f"{station} {rung:g}" for station, rung in table["highest"].items())
     ruler_rows = "".join(f"<tr><td>{label}</td><td class='{'fail' if verdict == 'RED' else 'pass'}'>{verdict}</td>"
                          f"<td class='num'>{value:.2e} deg</td></tr>" for label, verdict, value in rulers)
+    glance, *walkthrough = session.cells
     cells = "".join(f"<h3>{index} · {html.escape(cell['label'])}</h3><p class='cell-caption'>{html.escape(cell['caption'])}</p>"
-                    + pre(session.prompt(cell["code"]) + ("\n" + cell["output"] if cell["output"] else ""))
-                    for index, cell in enumerate(session.cells, start=1))
+                    + notebook(cell) for index, cell in enumerate(walkthrough, start=1))
+    tests_passed = passed_line.strip("= ").split(" passed")[0]
     status = "PASS" if not table["problems"] and green_code == 0 and isolated_code == 0 else "FAIL"
     page = f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>robot_metrics v0</title><style>{CSS}</style></head><body><main>
+<title>robot_metrics v0</title><style>{CSS}{token_css()}</style></head><body><main>
 <h1>robot_metrics v0</h1>
 <p class="verdict"><b>{status}: robot_metrics v0 reproduces round 8's scorecard at float round-off</b> — local
 <code>main</code> @ <code>{head}</code>, tests first @ <code>{tests_first}</code>; no remote. The W&amp;B send and a
@@ -247,6 +308,11 @@ every block below from a real run.</p>
 <div class="tile"><b>4 packages</b><span>in the isolated env: numpy, dataclass-values, robot-msgs, robot-metrics</span></div>
 <div class="tile"><b>{table['stops']} stops</b><span>each split mid-dwell in the live == offline test</span></div>
 </div>
+
+<h2>API at a glance</h2>
+<p class="cell-caption">{html.escape(glance['caption'])} Each line's output sits right under it, from the run that
+built this page.</p>
+{notebook(glance)}
 
 <h2>What it shows on real runs</h2>
 <figure><img alt="Every CAN 11 stop at the tip by rung, with Zach's 1 mm line" src="{image(MEDIA / 'can11-tip-stops.png')}">
@@ -270,6 +336,8 @@ the scorecard and the ladder's summary. {table['plays']} real plays, {table['sim
 <p class="muted">The contract predicted the linear plan at 9.4e-4 deg before any variant was built.</p>
 
 <h2>A usage session on CAN 11's round-8 runs</h2>
+<p class="muted">It continues the glance's namespace (<code>run</code>, <code>collection</code>, <code>strata</code>, ...);
+<code>MEDIA</code> is this report's media folder. One statement, then its output.</p>
 {cells}
 
 <h2>Tests</h2>
@@ -279,7 +347,7 @@ the scorecard and the ladder's summary. {table['plays']} real plays, {table['sim
 
 <h2>What next</h2>
 <ul>
-<li><b>Done and proved:</b> the package, its 54 tests (red first), parity at the frozen tolerances, live == offline,
+<li><b>Done and proved:</b> the package, its {tests_passed} tests (red first), parity at the frozen tolerances, live == offline,
 dedup, identity, gate counts, Repeatability and PerformanceGain against their oracles, import isolation.</li>
 <li><b>Decided for you</b> (each undone by a commit; list in PEP 0001 §10): module <code>alignment</code> with the function
 <code>align</code>; compute groups one step past identity (rms / max_abs / mean_abs share a state); a statistic that lands on a
