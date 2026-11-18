@@ -5,11 +5,23 @@ build-backend = "hatchling.build"
 
 [project]
 name = "robot-metrics"
-version = "0.0.1"
+version = "0.1.0"
 description = "Performance metrics for robot parts: torchmetrics' shape with numpy inside, over robot_msgs streams, live or offline, with the gates kept outside compute()."
 readme = "README.md"
 authors = [{ name = "Zach Yamaoka" }]
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
+keywords = ["robotics", "metrics", "tracking error", "repeatability", "ISO 9283", "robot_msgs", "torchmetrics"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering",
+]
 # WHY robot_msgs + numpy only (Zach, 2026-11-17, "dependency-free runtime cores"; robot_msgs layering 2026-11-12): the
 # metric core must import with nothing heavier, so robot_models, RobotDx and sim2real can all depend on it. matplotlib,
 # wandb and rerun-sdk are extras, imported only inside their adapters.
@@ -21,10 +33,17 @@ wandb = ["wandb>=0.19"]
 # WHY the pin: robot_msgs' own rerun extra pins 0.40.0 (an .rrd needs a viewer at least as new).
 rerun = ["rerun-sdk==0.40.0"]
 test = ["pytest>=8", "matplotlib>=3.8"]
+# the landing page's builder (site/build_site.py): highlighting and the UR5e gallery example's MuJoCo sim
+site = ["matplotlib>=3.8", "pygments>=2.17", "mujoco>=3.2"]
 
-[tool.uv.sources]
-# WHY absolute: robot_models names it the same way (a consumer's lock took a relative source over, 2026-11-12).
-robot-msgs = { path = "/home/bam/robot_msgs", editable = true }
+[project.urls]
+Homepage = "https://zacharyyamaoka.github.io/robot_metrics/"
+Source = "https://github.com/zacharyyamaoka/robot_metrics"
+Changelog = "https://github.com/zacharyyamaoka/robot_metrics/blob/main/CHANGELOG.md"
+
+# WHY no [tool.uv.sources] override for robot-msgs (public release, 2026-11-18): robot-msgs comes from PyPI so a fresh
+# clone and CI resolve it. To work against a local robot_msgs checkout, install it over the top in your own env:
+#   uv pip install -e ../robot_msgs
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/robot_metrics"]
@@ -32,7 +51,7 @@ packages = ["src/robot_metrics"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [
-    "archive: reads round 8 or the five-bar ladder on /archive (skipped when it is absent)",
+    "archive: reads round 8 or the five-bar ladder (local recordings, not public; skipped when absent)",
 ]
 
 [tool.ruff]

@@ -15,7 +15,7 @@ record is `docs/peps/0001-robot-metrics-v0.md`; read it before changing the core
 
 ## Layering
 
-- Runtime deps: numpy + robot_msgs (editable `/home/bam/robot_msgs`) + the stdlib. matplotlib, wandb and rerun-sdk
+- Runtime deps: numpy + robot_msgs (`robot-msgs` from PyPI, no local source override) + the stdlib. matplotlib, wandb and rerun-sdk
   are extras imported only inside `views.plot` and `adapters/`. `tests/test_import_isolation.py` enforces it.
 - Never import io-diagnostics (RobotDx), sim2real, robot_models or robotparts: they will import this package.
 - Missing something robot_msgs should have? Write it here and list it as a proposed move in a PEP; never edit
@@ -37,5 +37,8 @@ cd ~/robot_metrics && taskset -c 2-5,16,17 uv run --extra test pytest -q
 
 - At most 2 worker processes, pinned `taskset -c 2-5,16,17`; never CPUs 22-23 (the fdcanusb IRQ).
 - Never touch /dev/ttyACM*, CAN, cameras or moteus. No whole-disk find/du.
-- Local git only: no remote, never push.
+- Public: github.com/zacharyyamaoka/robot_metrics (MIT). Push verified main; tag releases `vX.Y.Z` with a
+  CHANGELOG entry. Never commit recordings, images or data to main: they live on /archive and the site's gh-pages.
+- Landing page: `website/build_site.py` (cells in `website/gallery.py`, run for real) then
+  `website/publish_pages.py` (gh-pages). Live: https://zacharyyamaoka.github.io/robot_metrics/
 - Reports: `/home/bam/robot_metrics/reports/<name>-<date>.html`, built by `docs/build_report.py`.

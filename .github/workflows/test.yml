@@ -1,0 +1,24 @@
+# The tests that need no recordings: 53 of 69. The round-8 and five-bar parity tests read local recordings that are
+# not public, and skip cleanly without them (tests/conftest.py).
+name: test
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: tests (no recordings)
+        run: uv run --isolated --python ${{ matrix.python }} --extra test python -m pytest -q -rs
+        env:
+          MPLBACKEND: Agg

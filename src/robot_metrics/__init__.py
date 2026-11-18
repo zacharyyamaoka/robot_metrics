@@ -32,7 +32,7 @@ from .stock import (CodeShare, ErrorPercentile, ErrorStat, HeldOutPair, Performa
 from .summary import Share, Stratum, Tail, highest_passing, summarize, wilson
 from .views import View
 
-__version__ = "0.0.1"
+__version__ = "0.1.0"
 
 __all__ = [
     "DEGREES", "Alias", "Aligned", "AlignedPair", "Aligner", "Alignment", "CalibrationOutcome", "CodeShare",

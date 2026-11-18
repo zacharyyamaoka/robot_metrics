@@ -11,6 +11,7 @@ never opens the ladder's scoring file.
 from __future__ import annotations
 
 import functools
+import os
 from pathlib import Path
 
 import numpy as np
@@ -19,7 +20,9 @@ from robot_msgs.trajectory import JointTrajectory, PoseTrajectory
 
 from ..run import Run
 
-LADDER = Path("/archive/datasets/bam_rig/rack_2026-11-10/fivebar_real/ladder_real_124755/ladder")
+# WHY an environment override: the recordings are not public; point this at your own copy of the ladder
+LADDER = Path(os.environ.get("ROBOT_METRICS_FIVEBAR_LADDER")
+              or "/archive/datasets/bam_rig/rack_2026-11-10/fivebar_real/ladder_real_124755/ladder")
 FOLDERS = {"real": "rungs", "sim": "sim"}
 DEPLOYMENT = "bam_fb five-bar (rack 2026-11-10)"
 JOINTS = ("j2", "c1")

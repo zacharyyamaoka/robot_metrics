@@ -40,7 +40,8 @@ from robot_msgs.trajectory import JointTrajectory
 from ..alignment import align
 from ..run import Run
 
-ROUND = Path("/archive/datasets/bam_rig/onedof_2026-11-15/round8")
+# WHY an environment override: the recordings are not public; point this at your own copy of the round
+ROUND = Path(os.environ.get("ROBOT_METRICS_ROUND8") or "/archive/datasets/bam_rig/onedof_2026-11-15/round8")
 SIM_MEMO = Path(os.environ.get("BAM_PENDULUM_SIM_MEMO") or Path.home() / ".cache/bam_rack_twin/pendulum_sim_memo")
 DEPLOYMENT = "one-dof-test-rack"
 PART_TYPE = "integrated_servo"

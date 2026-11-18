@@ -6,5 +6,6 @@ and ``Run`` records, and compute nothing.
 
 WHY in the package for now: a usage session needs real runs in five lines. The run files' own reader belongs with the
 recorder (data_recorder / sim2real tools/run_files.py); when one exists, these become thin calls to it (PEP 0001).
-Both read /archive read-only and never open a scoring file: the parity oracle stays in the tests.
+Both read the recordings read-only (not public: ``ROBOT_METRICS_ROUND8`` / ``ROBOT_METRICS_FIVEBAR_LADDER`` point at a
+copy) and never open a scoring file: the parity oracle stays in the tests. ``available()`` says whether they are there.
 """
