@@ -498,6 +498,8 @@ th { background:var(--code); font-weight:600; } td.num { font-variant-numeric:ta
   font-weight:600; }
 .tag { display:inline-block; font-size:12.5px; background:var(--code); border-radius:6px; padding:1px 7px; margin:2px 2px 0 0; }
 table.overview td { font-size:14px; } table.overview td:first-child { width:30%; }
+table.overview td:nth-child(4), table.overview th:nth-child(4) { min-width:150px; }
+table.overview td:nth-child(5) { white-space:nowrap; }
 table.aliases td.note { min-width:220px; font-size:13px; }
 .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px 16px; min-width:0; }
 .card header { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-bottom:4px; }
@@ -525,7 +527,7 @@ details { margin:8px 0; } summary { cursor:pointer; font-weight:600; font-size:1
 .tile b { display:block; font-size:20px; } .tile span { color:var(--muted); font-size:13px; }
 .figs { display:grid; grid-template-columns:minmax(0,1fr); gap:12px; }
 .figs figure img { max-width:920px; margin:0 auto; }
-.parts { display:grid; gap:4px; }
+.parts { display:flex; flex-wrap:wrap; gap:8px 18px; margin:4px 0 0; }
 .install pre { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:10px 12px; overflow-x:auto; }
 footer { border-top:1px solid var(--line); margin-top:30px; padding:18px 0 40px; color:var(--muted); font-size:13.5px; }
 @media (max-width: 900px) {
