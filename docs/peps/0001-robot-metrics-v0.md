@@ -111,6 +111,12 @@ field copy. A `Gate` passes when all its objectives pass.
 
 1. **RobotDx migrates its stock onto these classes**: `robotdx.diagnostics.stock` keeps `Limits`, `judge`, `Result`
    and records, takes its formulas from robot_metrics, and moves the `limits` out of every config.
+   **Started 2026-11-17** (io-diagnostics PEP 0004): tracking error, stop error and the limiter shares compute through
+   `ErrorStat`, the new `ErrorPercentile`, `StopStat` and `CodeShare`, byte-identical on the Oct 24-25 rack runs and
+   round 8. What it needed here, each held bit for bit to sim2real.metrics.actuator (`tests/test_robotdx_rules.py`):
+   StopStat's rule options (`dwell_min_s`, `settle_window_s`, `count_first_dwell`; defaults unchanged), any percentile
+   `"p<q>"` as a StopStat statistic, `ErrorPercentile` (p95 of |e|), and `stops.summary` / `functional.stop_summary`
+   (T4's numbers over stop errors in the caller's unit).
 2. **sim2real.metrics.actuator** (`tracking_statistic`, `stops`, `stop_summary`) is replaced by robot_metrics; its
    fidelity helpers (`floor`, `fidelity_ratios`) stay until a fidelity family is designed (out of scope here).
 3. **robotparts and robot_models gain `.metrics`**: `IntegratedServo.metrics = catalog.integrated_servo()` beside

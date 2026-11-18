@@ -5,6 +5,7 @@
     state.closed                                                             # tuple[Stop, ...]
     stops(target, measured)                                                  # the same fold over a whole recording
     settle_time(stop, band)                                                  # any band, from the rows the stop carries
+    summary(signed, percentile=90.0)                                         # T4's numbers over signed stop errors
 
 The rule is round 8's (bam_rack_twin pendulum_score.stops, via the metrics-API proposals' shared kernel ``stock.py``
 at robot_models f0daa34, ported line for line with its state lifted out of the tracker object): a stop is a dwell of
@@ -14,6 +15,11 @@ runs from the dwell's start (the move's end) to the first row after which every 
 
 WHY here: robot_msgs.compare has no stop rule yet. Proposed move (PEP 0001 §Next): ``robot_msgs.compare.stops``
 beside ``goal``, so sim2real.metrics.actuator and RobotDx's T4 call the same code.
+
+WHY the rule's three options (RobotDx T4, 2026-11-17): RobotDx's stock ``stop_error`` (gate T4, sim2real.metrics.actuator.stops
+before it) counts a dwell its tape STARTS in (``count_first_dwell``: after the runner's prelude a tape may open on a held
+target), drops the tape's last dwell (``include_last_dwell=False``: parking), and takes ``dwell_min_s`` / ``settle_window_s``
+from its config. The defaults are the pendulum's rule, unchanged. One kernel holds both, instead of two loops drifting.
 
 WHY one per-sample rule for live and offline (Zach, 2026-11-17: "Able to compute live and offline ... it doesn't matter
 if the sensor stream is online or offline"): ``stops()`` is literally ``track`` over the recording, so a stop split
@@ -83,19 +89,22 @@ class StopsState:
     open: OpenDwell | None = None
 
 
-def _close(since: list, dwell_start: int, dwell_first_row: int, t0: float, joint: str) -> Stop | None:
+def _close(since: list, dwell_start: int, dwell_first_row: int, t0: float, joint: str, dwell_min_s: float = DWELL_MIN_S,
+           settle_window_s: float = SETTLE_WINDOW_S, count_first_dwell: bool = False) -> Stop | None:
     rows = np.asarray(since, float)
     dwell = rows[dwell_start:]
-    if dwell_first_row > 0 and dwell[-1, 0] - dwell[0, 0] >= DWELL_MIN_S:
-        tail = dwell[dwell[:, 0] >= dwell[-1, 0] - SETTLE_WINDOW_S]
+    if (dwell_first_row > 0 or count_first_dwell) and dwell[-1, 0] - dwell[0, 0] >= dwell_min_s:
+        tail = dwell[dwell[:, 0] >= dwell[-1, 0] - settle_window_s]
         error = float(np.mean(tail[:, 1] - tail[:, 2]))
         return Stop(float(dwell[0, 0] - t0), float(dwell[0, 2]), error, rows[:, 0].copy(), rows[:, 1].copy(),
                     rows[:, 2].copy(), dwell_start, joint)
     return None
 
 
-def track(state: StopsState, t, q, target, target_speed, *, joint: str = "joint") -> StopsState:
-    """The stop rule over one chunk of samples; returns a new state (the old one is untouched)."""
+def track(state: StopsState, t, q, target, target_speed, *, joint: str = "joint", dwell_min_s: float = DWELL_MIN_S,
+          settle_window_s: float = SETTLE_WINDOW_S, count_first_dwell: bool = False) -> StopsState:
+    """The stop rule over one chunk of samples; returns a new state (the old one is untouched). Pass the same rule
+    (``dwell_min_s``, ``settle_window_s``, ``count_first_dwell``) to every chunk of a run and to its ``finish``."""
 
     closed = list(state.closed)
     if state.open is None:
@@ -111,7 +120,7 @@ def track(state: StopsState, t, q, target, target_speed, *, joint: str = "joint"
             t0 = t_row
         still = abs(speed_row) < STILL_RAD_S
         if dwell_start is not None and not (still and abs(target_row - dwell_target) < SAME_TARGET_RAD):
-            stop = _close(since, dwell_start, dwell_first_row, t0, joint)
+            stop = _close(since, dwell_start, dwell_first_row, t0, joint, dwell_min_s, settle_window_s, count_first_dwell)
             if stop is not None:
                 closed.append(stop)
             since = [list(since[-1])]          # the dwell's last row is the "last still row" the next move starts from
@@ -126,7 +135,8 @@ def track(state: StopsState, t, q, target, target_speed, *, joint: str = "joint"
                                                dwell_target, dwell_first_row, joint))
 
 
-def finish(state: StopsState, *, include_last_dwell: bool = True) -> StopsState:
+def finish(state: StopsState, *, include_last_dwell: bool = True, dwell_min_s: float = DWELL_MIN_S,
+           settle_window_s: float = SETTLE_WINDOW_S, count_first_dwell: bool = False) -> StopsState:
     """The run boundary: close the open dwell. WHY a flag, default True: the pendulum's rule counts the episode's last
     dwell (a ladder play is A -> B -> A and its return to A is a commanded stop); sim2real.metrics.actuator.stops and
     RobotDx's T4 drop it (a tape's last dwell is parking). One rule holds both instead of two functions drifting apart."""
@@ -136,17 +146,20 @@ def finish(state: StopsState, *, include_last_dwell: bool = True) -> StopsState:
         return state
     if o.dwell_start is None or not include_last_dwell:
         return StopsState(state.closed, None)
-    stop = _close(o.since.tolist(), o.dwell_start, o.dwell_first_row, o.t0, o.joint)
+    stop = _close(o.since.tolist(), o.dwell_start, o.dwell_first_row, o.t0, o.joint, dwell_min_s, settle_window_s,
+                  count_first_dwell)
     return StopsState(state.closed + ((stop,) if stop is not None else ()), None)
 
 
-def stops(target: JointTrajectory, measured: JointTrajectory, *, joint: int = 0,
-          include_last_dwell: bool = True) -> tuple[Stop, ...]:
+def stops(target: JointTrajectory, measured: JointTrajectory, *, joint: int = 0, include_last_dwell: bool = True,
+          dwell_min_s: float = DWELL_MIN_S, settle_window_s: float = SETTLE_WINDOW_S,
+          count_first_dwell: bool = False) -> tuple[Stop, ...]:
     """Every stop of a whole recording: ``track`` folded over it once, then ``finish``."""
 
+    rule = dict(dwell_min_s=dwell_min_s, settle_window_s=settle_window_s, count_first_dwell=count_first_dwell)
     state = track(StopsState(), measured.t, measured.positions[:, joint], target.positions[:, joint],
-                  target.velocities[:, joint], joint=target.joint_names[joint])
-    return finish(state, include_last_dwell=include_last_dwell).closed
+                  target.velocities[:, joint], joint=target.joint_names[joint], **rule)
+    return finish(state, include_last_dwell=include_last_dwell, **rule).closed
 
 
 def settle_time(stop: Stop, band: float, scale: float = 1.0) -> float:
@@ -162,3 +175,16 @@ def settle_time(stop: Stop, band: float, scale: float = 1.0) -> float:
     if outside[-1] == t.size - 1:
         return math.inf
     return float(t[outside[-1] + 1] - t[0])
+
+
+def summary(signed, percentile: float = 90.0) -> dict:
+    """T4's numbers over signed stop errors in the caller's unit: ``value`` the ``percentile`` of |error|, ``n``, the
+    ``median`` and ``max`` of |error|, the signed mean, and ``worst`` the index of the largest |error|.
+
+    WHY in the caller's unit and not SI (RobotDx's stop_error, moved from sim2real.metrics.actuator.stop_summary bit for
+    bit, 2026-11-17): a percentile interpolates, so a percentile of mrad is not 1e3 x a percentile of rad to the last
+    bit; RobotDx's published T4 numbers are taken per stop in its display unit, as ``summary.Tail`` takes a stratum's."""
+
+    magnitudes = np.abs(np.array(signed))
+    return {"value": float(np.percentile(magnitudes, percentile)), "n": len(signed), "median": float(np.median(magnitudes)),
+            "max": float(magnitudes.max()), "mean_signed": float(np.mean(signed)), "worst": int(np.argmax(magnitudes))}

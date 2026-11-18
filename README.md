@@ -26,7 +26,7 @@ Values come back in each alias's display unit (deg, mm, ms, %); the math runs in
 | module | what |
 |---|---|
 | `metric` | `Metric` (empty / update / merge / compute / close), `Stream` (torchmetrics' update / compute / reset / plot) |
-| `stock`, `functional` | `ErrorStat`, `StopStat`, `TimeOffset`, `CodeShare`, `Repeatability`, `PerformanceGain`, and a function beside each |
+| `stock`, `functional` | `ErrorStat`, `ErrorPercentile`, `StopStat`, `TimeOffset`, `CodeShare`, `Repeatability`, `PerformanceGain`, and a function beside each |
 | `stops` | the stop kernel: dwells found one sample at a time, safe across chunk boundaries |
 | `alignment` | `align` / `Aligner`: the plan at each reply's instant, with a tolerance, offline or live |
 | `collection`, `catalog` | `Alias`, `PartMetrics` (the seed of `RobotPart.metrics`), `Collection` (each identity once) |

@@ -1,6 +1,7 @@
 """The stock metrics: math only, each a frozen config whose state is a value. The meaning comes from the data.
 
     ErrorStat(statistic="rms", rows="moving")     target - measured over the rows it reads     state (sum e², n, max |e|, sum |e|)
+    ErrorPercentile(percentile=95.0)              a percentile of |target - measured|          state: the |e| seen so far
     StopStat(of="error", statistic="median")      a quantity of every stop, pooled             state StopsState (the stop kernel)
     TimeOffset()                                  how late the state runs behind the command   per-run offsets      live=False
     CodeShare(codes=(97, 98, 99, 102))            share of rows holding one of the codes       (hits, rows)
@@ -22,6 +23,7 @@ changes the metric's identity): targets live on ``Objective`` only.
 from __future__ import annotations
 
 import math
+import re
 import statistics
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
@@ -112,21 +114,81 @@ class ErrorStat(Metric):
         return state[2] if self.statistic == "max_abs" else state[3] / state[1]
 
 
+@dataclass(frozen=True)
+class ErrorPercentile(Metric):
+    """A percentile of |target - measured| over the rows it reads (robot_msgs.compare.ErrorStats.p95_abs at 95).
+
+    WHY its own class beside ErrorStat (RobotDx's tracking p95, 2026-11-17): a percentile has no fixed-size sufficient
+    statistic, so its state is the magnitudes seen so far (a tuple of arrays; merge concatenates), where ErrorStat's
+    is four numbers. Exact, never a sketch: a run's p95 is the gate's number."""
+
+    percentile: float = 95.0
+    rows: str = "all"
+    field: str = "positions"
+    joint: int = 0
+    name = "error percentile"
+    description = "A percentile of |target - measured| over the rows it reads; at 95, robot_msgs' p95_abs."
+    references = ("robot_msgs.compare.ErrorStats.p95_abs", ROBOTDX + " tracking_error (statistic='p95')",
+                  "numpy.percentile (linear)")
+    hint = "distribution"
+
+    def __post_init__(self) -> None:
+        if not 0.0 <= self.percentile <= 100.0:
+            raise ValueError(f"percentile is in [0, 100], not {self.percentile!r}")
+        if self.rows not in ("all", "moving"):
+            raise ValueError(f"rows is 'all' or 'moving', not {self.rows!r}")
+
+    def empty(self) -> tuple:
+        return ()
+
+    def update(self, state: tuple, target: Any, measured: Any) -> tuple:
+        if not len(measured):
+            return state
+        check_aligned(self, target, measured)
+        error = error_signal(target, measured, self.field, self.joint, self.rows)
+        return state + (np.abs(error),) if error.size else state
+
+    def merge(self, a: tuple, b: tuple) -> tuple:
+        return a + b
+
+    def compute(self, state: tuple) -> float | None:
+        if not state:
+            return None
+        return float(np.percentile(state[0] if len(state) == 1 else np.concatenate(state), self.percentile))
+
+
 STOP_QUANTITIES = ("error", "settle", "settled", "overshoot", "count")
 STOP_STATISTICS = ("median", "max", "p95", "p90", "mean", "count", "all")
+PERCENTILE = re.compile(r"p(\d+(?:\.\d+)?)")     # "p<q>": any percentile, p90 and p95 among them
+
+
+def percentile_of(statistic: str) -> float | None:
+    """The q of a "p<q>" statistic (0 <= q <= 100), else None."""
+
+    match = PERCENTILE.fullmatch(statistic)
+    if match is None or not 0.0 <= float(match.group(1)) <= 100.0:
+        return None
+    return float(match.group(1))
 
 
 @dataclass(frozen=True)
 class StopStat(Metric):
     """A quantity of every stop, pooled: |error|, settle time against ``band``, settled within ``band`` (bool),
     overshoot past the target along the move (robot_msgs.compare.goal), or the count. ``band`` is in the signal's unit
-    (rad for a joint); every StopStat on one signal shares one pass of the stop kernel."""
+    (rad for a joint); every StopStat on one signal and one rule shares one pass of the stop kernel.
+
+    The rule: ``dwell_min_s``, ``settle_window_s``, ``count_first_dwell`` and ``include_last_dwell`` (``stops``' WHY).
+    The defaults are the pendulum's; RobotDx's T4 is ``count_first_dwell=True, include_last_dwell=False`` on a tape.
+    ``statistic`` is median, max, mean, count, all, or any percentile "p<q>" (p90, p95, p99, p97.5)."""
 
     of: str = "error"
     statistic: str = "median"
     band: float = math.inf
     include_last_dwell: bool = True
     joint: int = 0
+    dwell_min_s: float = stop_kernel.DWELL_MIN_S
+    settle_window_s: float = stop_kernel.SETTLE_WINDOW_S
+    count_first_dwell: bool = False
     name = "stop statistic"
     description = ("A quantity of every stop (a dwell >= 0.25 s at zero commanded speed on one target that a move led "
                    "into; its error the mean of the dwell's last 50 ms), pooled over the stops it is given.")
@@ -135,8 +197,8 @@ class StopStat(Metric):
     hint = "distribution"
 
     def __post_init__(self) -> None:
-        if self.of not in STOP_QUANTITIES or self.statistic not in STOP_STATISTICS:
-            raise ValueError(f"of in {STOP_QUANTITIES}, statistic in {STOP_STATISTICS}")
+        if self.of not in STOP_QUANTITIES or (self.statistic not in STOP_STATISTICS and percentile_of(self.statistic) is None):
+            raise ValueError(f"of in {STOP_QUANTITIES}, statistic in {STOP_STATISTICS} or 'p<q>' with 0 <= q <= 100")
 
     @property
     def value_type(self) -> str:  # type: ignore[override]
@@ -144,7 +206,14 @@ class StopStat(Metric):
 
     @property
     def state_key(self) -> tuple:
-        return (type(self), self.joint, self.include_last_dwell)     # one stop pass serves every reading
+        return (type(self), self.joint, *self.rule.values(), self.include_last_dwell)   # one stop pass, every reading
+
+    @property
+    def rule(self) -> dict:
+        """The kernel's keyword arguments, the same for every chunk of a run and its close."""
+
+        return {"dwell_min_s": self.dwell_min_s, "settle_window_s": self.settle_window_s,
+                "count_first_dwell": self.count_first_dwell}
 
     def empty(self) -> stop_kernel.StopsState:
         return stop_kernel.StopsState()
@@ -155,10 +224,10 @@ class StopStat(Metric):
         check_aligned(self, target, measured)
         j = self.joint
         return stop_kernel.track(state, measured.t, measured.positions[:, j], target.positions[:, j],
-                                 target.velocities[:, j], joint=target.joint_names[j])
+                                 target.velocities[:, j], joint=target.joint_names[j], **self.rule)
 
     def close(self, state: stop_kernel.StopsState) -> stop_kernel.StopsState:
-        return stop_kernel.finish(state, include_last_dwell=self.include_last_dwell)
+        return stop_kernel.finish(state, include_last_dwell=self.include_last_dwell, **self.rule)
 
     def merge(self, a: stop_kernel.StopsState, b: stop_kernel.StopsState) -> stop_kernel.StopsState:
         return stop_kernel.StopsState(self.close(a).closed + self.close(b).closed, None)
@@ -195,7 +264,7 @@ class StopStat(Metric):
         elif self.statistic == "mean":
             result = float(np.mean(values))
         else:
-            result = float(np.percentile(values, 95.0 if self.statistic == "p95" else 90.0))
+            result = float(np.percentile(values, percentile_of(self.statistic)))
         # WHY None and never a clipped number: a statistic that lands on a never-settled stop (inf) has no value; the
         # scorecard writes None there ("None or inf when that median never settled"), and None is never a pass.
         return float(result) if math.isfinite(result) else None
