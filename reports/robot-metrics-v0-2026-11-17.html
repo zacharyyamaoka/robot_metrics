@@ -268,11 +268,11 @@ ul { padding-left:20px; } li { margin:3px 0; }
 :root[data-theme="dark"] .notebook .src .il { color: #A5D6FF } /* Literal.Number.Integer.Long */</style></head><body><main>
 <h1>robot_metrics v0</h1>
 <p class="verdict"><b>PASS: robot_metrics v0 reproduces round 8's scorecard at float round-off</b> —
-<code>main</code> @ <code>9c89fd8</code> (public: github.com/zacharyyamaoka/robot_metrics), tests first @
+<code>main</code> @ <code>fdb6d36</code> (public: github.com/zacharyyamaoka/robot_metrics), tests first @
 <code>7f8763c</code>. The W&amp;B send and a Rerun viewer were not exercised.</p>
 <p class="muted">The recommended splice of the five metrics-API proposals: v4's value-state core and occurrence gates under
 v1's torchmetrics face, v3's alignment step, v5's context rule, amendment 4's other inputs. Decision record:
-<code>docs/peps/0001-robot-metrics-v0.md</code>. Built 2026-11-18 15:17 MST by <code>docs/build_report.py</code>,
+<code>docs/peps/0001-robot-metrics-v0.md</code>. Built 2026-11-18 15:25 MST by <code>docs/build_report.py</code>,
 every block below from a real run.</p>
 <div class="tiles">
 <div class="tile"><b>99 passed</b><span>tests, red first at 7f8763c</span></div>
@@ -396,7 +396,7 @@ all stops settled          True</pre></div><h3>3 · the same run, live</h3><p cl
 <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">300</span><span class="p">):</span>
     <span class="n">collection</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">mid_run_tally</span><span class="p">,</span> <span class="n">next_chunk</span><span class="p">)</span>
 <span class="n">milliseconds</span> <span class="o">=</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span> <span class="o">-</span> <span class="n">started</span><span class="p">)</span> <span class="o">/</span> <span class="mi">300</span> <span class="o">*</span> <span class="mf">1e3</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"one live update: </span><span class="si">{</span><span class="n">milliseconds</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2"> ms per 7-sample chunk"</span><span class="p">)</span></pre><pre class='out'>one live update: 1.09 ms per 7-sample chunk</pre><pre class='src gap'><span class="n">tracking_rms</span> <span class="o">=</span> <span class="n">ErrorStat</span><span class="p">(</span><span class="n">statistic</span><span class="o">=</span><span class="s2">"rms"</span><span class="p">,</span> <span class="n">rows</span><span class="o">=</span><span class="s2">"moving"</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"one live update: </span><span class="si">{</span><span class="n">milliseconds</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2"> ms per 7-sample chunk"</span><span class="p">)</span></pre><pre class='out'>one live update: 0.68 ms per 7-sample chunk</pre><pre class='src gap'><span class="n">tracking_rms</span> <span class="o">=</span> <span class="n">ErrorStat</span><span class="p">(</span><span class="n">statistic</span><span class="o">=</span><span class="s2">"rms"</span><span class="p">,</span> <span class="n">rows</span><span class="o">=</span><span class="s2">"moving"</span><span class="p">)</span>
 <span class="n">stream</span> <span class="o">=</span> <span class="n">tracking_rms</span><span class="o">.</span><span class="n">stream</span><span class="p">()</span>    <span class="c1"># torchmetrics' face: update / compute / reset</span>
 <span class="k">for</span> <span class="n">chunk</span> <span class="ow">in</span> <span class="n">chunks</span><span class="p">:</span>
     <span class="n">stream</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">chunk</span><span class="o">.</span><span class="n">streams</span><span class="p">[</span><span class="s2">"target"</span><span class="p">],</span> <span class="n">chunk</span><span class="o">.</span><span class="n">streams</span><span class="p">[</span><span class="s2">"state"</span><span class="p">])</span>
@@ -499,7 +499,7 @@ rung 1   | tracking 0.163° | stops median 0.558 p95 1.129 worst 1.317 mm, n=14 
 <span class="n">tip_record</span><span class="o">.</span><span class="n">value</span><span class="p">,</span> <span class="n">tip_record</span><span class="o">.</span><span class="n">unit</span><span class="p">,</span> <span class="n">tip_record</span><span class="o">.</span><span class="n">base</span><span class="p">,</span> <span class="n">tip_record</span><span class="o">.</span><span class="n">version</span></pre><pre class='out'>(0.23094052947652116, &#x27;mm&#x27;, &#x27;StopStat&#x27;, &#x27;1&#x27;)</pre></div>
 
 <h2>Tests</h2>
-<details open><summary>Green at 9c89fd8</summary><pre>$ cd ~/robot_metrics &amp;&amp; taskset -c 2-5,16,17 uv run --extra test pytest -v --durations=5
+<details open><summary>Green at fdb6d36</summary><pre>$ cd ~/robot_metrics &amp;&amp; taskset -c 2-5,16,17 uv run --extra test pytest -v --durations=5
 ============================= test session starts ==============================
 platform linux -- Python 3.14.6, pytest-9.2.0, pluggy-1.7.0 -- ~/robot_metrics/.venv/bin/python
 rootdir: ~/robot_metrics
@@ -608,15 +608,15 @@ tests/test_shown_examples.py::test_a_shown_script_runs_alone_in_a_fresh_interpre
 tests/test_shown_examples.py::test_a_shown_script_runs_alone_in_a_fresh_interpreter_and_prints_what_is_shown[site-ur5e] PASSED [100%]
 
 ============================= slowest 5 durations ==============================
-11.03s call     tests/test_live_offline.py::test_every_real_play_live_equals_offline
-2.73s call     tests/test_shown_examples.py::test_a_shown_script_runs_alone_in_a_fresh_interpreter_and_prints_what_is_shown[report-session]
-2.04s call     tests/test_shown_examples.py::test_a_shown_script_runs_alone_in_a_fresh_interpreter_and_prints_what_is_shown[site-pendulum]
-1.90s setup    tests/test_gates.py::test_gate_counts_equal_the_contract_and_the_scorecard
-1.85s call     tests/test_parity_round8.py::test_the_twin_side_matches_the_scorecard
-============================= 99 passed in 36.90s ==============================</pre></details>
+14.49s call     tests/test_live_offline.py::test_every_real_play_live_equals_offline
+4.97s call     tests/test_shown_examples.py::test_a_shown_script_runs_alone_in_a_fresh_interpreter_and_prints_what_is_shown[report-session]
+3.03s call     tests/test_shown_examples.py::test_a_shown_script_runs_alone_in_a_fresh_interpreter_and_prints_what_is_shown[site-pendulum]
+2.88s call     tests/test_parity_round8.py::test_the_twin_side_matches_the_scorecard
+2.32s setup    tests/test_gates.py::test_gate_counts_equal_the_contract_and_the_scorecard
+============================= 99 passed in 52.39s ==============================</pre></details>
 <details><summary>Red at 7f8763c (the tests alone, before any implementation)</summary><pre>$ git archive 7f8763c | tar -x &amp;&amp; pytest -q   # the tests, before any implementation
 ...
-E        +  where 1 = CompletedProcess(args=[&#x27;uv&#x27;, &#x27;run&#x27;, &#x27;--isolated&#x27;, &#x27;--no-dev&#x27;, &#x27;--project&#x27;, &#x27;/tmp/robot-metrics-red-a79p3vib&#x27;, &#x27;python&#x27;...nedof_round8, robot_metrics.datasets.fivebar_ladder\nModuleNotFoundError: No module named \&#x27;robot_metrics.catalog\&#x27;\n&#x27;).returncode
+E        +  where 1 = CompletedProcess(args=[&#x27;uv&#x27;, &#x27;run&#x27;, &#x27;--isolated&#x27;, &#x27;--no-dev&#x27;, &#x27;--project&#x27;, &#x27;/tmp/robot-metrics-red-xvzk08da&#x27;, &#x27;python&#x27;...nedof_round8, robot_metrics.datasets.fivebar_ladder\nModuleNotFoundError: No module named \&#x27;robot_metrics.catalog\&#x27;\n&#x27;).returncode
 
 tests/test_import_isolation.py:105: AssertionError
 =========================== short test summary info ============================
@@ -629,15 +629,15 @@ ERROR tests/test_identity.py
 ERROR tests/test_live_offline.py
 ERROR tests/test_other_inputs.py
 ERROR tests/test_parity_round8.py
-2 failed, 7 passed, 7 errors in 0.42s</pre></details>
+2 failed, 7 passed, 7 errors in 0.71s</pre></details>
 <details open><summary>Import isolation (the brief's command)</summary><pre>$ env -u VIRTUAL_ENV uv run --isolated python -c &quot;import robot_metrics&quot;
-Installed 4 packages in 11ms
+Installed 4 packages in 21ms
 exit 0
 
 $ env -u VIRTUAL_ENV uv run --isolated --no-dev python -c &quot;&lt;import every module, list what loaded&gt;&quot;
 loaded: [&#x27;dataclass_values&#x27;, &#x27;numpy&#x27;, &#x27;robot_metrics&#x27;, &#x27;robot_msgs&#x27;]
 installed: [&#x27;dataclass-values&#x27;, &#x27;numpy&#x27;, &#x27;robot-metrics&#x27;, &#x27;robot-msgs&#x27;]
-Installed 4 packages in 11ms
+Installed 4 packages in 15ms
 exit 0</pre></details>
 
 <h2>What next</h2>
