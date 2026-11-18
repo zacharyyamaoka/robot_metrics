@@ -9,16 +9,23 @@ server someone has to start (Zach, 3000-ft view, 2026-11-17).
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
 from ..views import View
 
 
+def entity_part(label: str) -> str:
+    """A group label as one Rerun entity-path part ("rung 0.2" -> "rung_0.2"): Rerun warns on unescaped whitespace."""
+
+    return re.sub(r"[^A-Za-z0-9_.-]+", "_", label).strip("_") or "value"
+
+
 def calls(view: View, entity: str) -> list[tuple[str, str, dict[str, Any]]]:
     out = []
     for i in range(len(view.y)):
-        group = view.group[i] if view.group else "value"
+        group = entity_part(view.group[i]) if view.group else "value"
         out.append((f"{entity}/{group}", "Scalars", {"index": int(i), "scalars": [float(view.y[i])]}))
     if view.target is not None:
         out.append((f"{entity}/target", "Scalars", {"index": 0, "scalars": [float(view.target)]}))

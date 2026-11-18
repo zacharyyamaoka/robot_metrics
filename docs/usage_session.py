@@ -31,7 +31,8 @@ run = onedof_round8.real_runs()[32]
 print(run, "\\n", run.alignment)
 collection = arm.collection()
 offline = collection.values(collection.fold(run))
-{name: round(value, 4) if isinstance(value, float) else value for name, value in offline.items()}
+for name, value in offline.items():
+    print(f"  {name:<20} {value:9.4f} {collection.aliases[name].unit}" if isinstance(value, float) else f"  {name:<20} {value}")
 '''),
     ("the same run, live", "Fed 7 samples at a time (a stop's dwell spans several chunks), the fold gives the offline "
      "numbers. One live update costs well under a 10 ms tick.", '''
@@ -57,10 +58,11 @@ print(f"Stream: {stream.compute() * DEGREES:.6f} deg (offline {offline['servo/tr
 can11 = [r for r in onedof_round8.real_runs() if r.labels["station"] == "can11"]
 strata = summarize(collection, can11, by=("station", "rung"))
 gates = catalog.pendulum_gates()
+short = {"tracks": "tracks", "tip stop (median)": "median stop", "tip stop (every stop)": "every stop"}
 for (station, rung), cell in sorted(strata.items()):
     v, tail = cell.values, cell.tails["tip stop error"]
-    marks = " · ".join(f"{name} {gate.judge(cell).verdict}" for name, gate in gates.items())
-    print(f"{station}@{rung:<3g} RMS {v['servo/tracking RMS']:.3f}° peak {v['servo/tracking peak']:.3f}° | tip stop median {v['tip stop error']:.3f} p95 {tail.p95:.3f} worst {tail.worst:.3f} mm (n={tail.n}) | {marks}")
+    marks = ", ".join(f"{short[name]} {gate.judge(cell).verdict}" for name, gate in gates.items())
+    print(f"{station}@{rung:<3g} RMS {v['servo/tracking RMS']:.3f}° | tip stop median {v['tip stop error']:.3f} p95 {tail.p95:.3f} worst {tail.worst:.3f} mm, n={tail.n} | {marks}")
 '''),
     ("one target, two shares, a Wilson interval", "The same stop state judged against two occurrence targets, nothing "
      "recomputed; a bool metric summarizes as a share of runs with its Wilson interval.", '''
