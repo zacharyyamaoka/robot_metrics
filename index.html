@@ -1,0 +1,982 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>robot_metrics</title>
+<meta name="description" content="Performance metrics for robot parts: torchmetrics' shape with numpy inside, over
+robot_msgs streams, live or offline, with the targets kept outside compute().">
+<style>
+:root { --bg:#fbfaf7; --panel:#ffffff; --ink:#1d1f23; --muted:#5d6470; --line:#e3e0d8; --accent:#2f6f4f;
+  --accent-soft:#e8f2ec; --warn:#9a5b00; --warn-soft:#fbf0dc; --bad:#b03a2e; --code:#f3f1ec; --out-bg:#f3f1ec;
+  --out-ink:#4f5661; --out-rule:#d3cec2; --paper:#ffffff; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#15171a; --panel:#1d2024; --ink:#e7e5e0;
+  --muted:#a3a9b2; --line:#33373d; --accent:#7cc39b; --accent-soft:#1f3329; --warn:#f0b35a; --warn-soft:#3a2d17;
+  --bad:#ec8b7f; --code:#24272c; --out-bg:#17191c; --out-ink:#a3a9b2; --out-rule:#3d4249; --paper:#f4f2ee; } }
+:root[data-theme="dark"] { --bg:#15171a; --panel:#1d2024; --ink:#e7e5e0; --muted:#a3a9b2; --line:#33373d;
+  --accent:#7cc39b; --accent-soft:#1f3329; --warn:#f0b35a; --warn-soft:#3a2d17; --bad:#ec8b7f; --code:#24272c;
+  --out-bg:#17191c; --out-ink:#a3a9b2; --out-rule:#3d4249; --paper:#f4f2ee; }
+* { box-sizing:border-box; }
+html { scroll-behavior:smooth; }
+body { margin:0; background:var(--bg); color:var(--ink); font:15.5px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif; }
+a { color:var(--accent); }
+.wrap { max-width:1200px; margin:0 auto; padding:0 16px; }
+header.hero { padding:26px 0 14px; border-bottom:1px solid var(--line); }
+.eyebrow { color:var(--muted); font-size:13px; letter-spacing:.02em; margin:0 0 6px; }
+h1 { font-size:32px; margin:0 0 4px; letter-spacing:-.01em; }
+h1 code { background:none; padding:0; font-size:inherit; }
+.lede { font-size:17px; max-width:900px; margin:0 0 10px; }
+.links { display:flex; flex-wrap:wrap; gap:8px; margin:8px 0 0; }
+.links a { text-decoration:none; border:1px solid var(--line); background:var(--panel); padding:5px 12px;
+  border-radius:999px; font-size:14px; }
+nav.toc { position:sticky; top:0; z-index:5; background:var(--bg); border-bottom:1px solid var(--line); }
+nav.toc .wrap { display:flex; gap:18px; overflow-x:auto; white-space:nowrap; padding-top:9px; padding-bottom:9px; }
+nav.toc a { text-decoration:none; color:var(--muted); font-size:14px; } nav.toc a:hover { color:var(--ink); }
+section { padding:22px 0 8px; }
+h2 { font-size:24px; margin:8px 0 6px; } h3 { font-size:18px; margin:26px 0 8px; } h4 { font-size:16px; margin:0; }
+.section-lede { color:var(--muted); max-width:860px; margin:0 0 14px; }
+.split { display:grid; grid-template-columns:minmax(0,5fr) minmax(0,7fr); gap:20px; align-items:start; }
+.glance { display:grid; grid-template-columns:minmax(0,1fr); gap:10px; margin:2px 0 10px; }
+.glance > div { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:10px 14px; }
+.glance-code h2 { margin-top:0; }
+.glance b.k { display:block; font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--accent); }
+.glance p { margin:4px 0 0; font-size:14.5px; }
+svg.diagram { width:100%; height:auto; display:block; margin:10px 0 6px; }
+svg.diagram.tall { display:none; max-width:420px; margin:10px auto; }
+.dg-box { fill:var(--panel); stroke:var(--line); stroke-width:1.2; }
+.dg-accent { stroke:var(--accent); stroke-width:1.8; }
+.dg-title { fill:var(--ink); font:600 15px system-ui,sans-serif; text-anchor:middle; }
+.dg-line { fill:var(--muted); font:13px system-ui,sans-serif; text-anchor:middle; }
+.dg-mono { fill:var(--ink); font:12px ui-monospace,SFMono-Regular,Menlo,monospace; text-anchor:middle; }
+.dg-lane { fill:var(--accent); font:600 12px system-ui,sans-serif; text-transform:uppercase; letter-spacing:.06em; }
+.dg-note { fill:var(--muted); font:italic 12.5px system-ui,sans-serif; }
+.dg-arrow { stroke:var(--muted); stroke-width:1.5; } .dg-dash { stroke-dasharray:5 4; } .dg-head { fill:var(--muted); }
+.two { display:grid; grid-template-columns:minmax(0,1.25fr) minmax(0,1fr); gap:18px; align-items:start; }
+.cell-caption { color:var(--muted); margin:4px 0 8px; font-size:14.5px; }
+.notebook { background:var(--panel); border:1px solid var(--line); border-radius:10px; overflow:hidden; margin:6px 0 16px; }
+.notebook pre { margin:0; border:0; border-radius:0; overflow-x:auto; max-width:100%; }
+pre { font:12.5px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; white-space:pre; }
+pre.src { background:var(--panel); color:var(--ink); padding:8px 14px; }
+pre.src.gap { padding-top:20px; }
+pre.out { background:var(--out-bg); color:var(--out-ink); border-left:3px solid var(--out-rule);
+  padding:5px 14px 6px 11px; font-size:12.2px; }
+pre.out.wrap { white-space:pre-wrap; overflow-wrap:anywhere; }
+code { background:var(--code); padding:1px 5px; border-radius:4px; font:12.8px ui-monospace,SFMono-Regular,Menlo,monospace; }
+pre code { background:none; padding:0; }
+table { border-collapse:collapse; width:100%; background:var(--panel); font-size:14px; }
+th, td { border:1px solid var(--line); padding:6px 8px; text-align:left; vertical-align:top; }
+th { background:var(--code); font-weight:600; } td.num { font-variant-numeric:tabular-nums; white-space:nowrap; }
+.scroll { overflow-x:auto; margin:8px 0 14px; border-radius:8px; }
+.api td:first-child { white-space:nowrap; font-weight:600; }
+.group { margin:22px 0 6px; } .group h3 { margin:0 0 2px; } .group p { color:var(--muted); margin:0 0 10px; }
+.cards { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; margin-top:14px; }
+.card .eyebrow { margin:0 0 2px; color:var(--accent); text-transform:uppercase; font-size:11.5px; letter-spacing:.06em;
+  font-weight:600; }
+.tag { display:inline-block; font-size:12.5px; background:var(--code); border-radius:6px; padding:1px 7px; margin:2px 2px 0 0; }
+table.overview td { font-size:14px; } table.overview td:first-child { width:30%; }
+table.aliases td.note { min-width:220px; font-size:13px; }
+.card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px 16px; min-width:0; }
+.card header { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-bottom:4px; }
+.card header h4 { font:600 16px ui-monospace,SFMono-Regular,Menlo,monospace; margin-right:auto; }
+.chip { font-size:12px; border-radius:999px; padding:2px 9px; background:var(--code); color:var(--muted); }
+.chip.live { background:var(--accent-soft); color:var(--accent); } .chip.end { background:var(--warn-soft); color:var(--warn); }
+.chip.real { background:var(--accent-soft); color:var(--accent); font-weight:600; }
+.chip.sim { background:var(--warn-soft); color:var(--warn); font-weight:600; }
+.desc { margin:4px 0 10px; }
+.io { display:grid; grid-template-columns:1fr 1fr; gap:10px; font-size:14px; margin:0 0 10px; }
+.io > div { background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:8px 10px; }
+table.config { font-size:13px; margin:0 0 8px; } table.config td:first-child, table.config td:nth-child(2) { white-space:nowrap; }
+.twin { font-size:14px; margin:6px 0; overflow-wrap:anywhere; }
+.muted { color:var(--muted); }
+figure { margin:12px 0; background:var(--paper); border:1px solid var(--line); border-radius:10px; padding:8px; }
+figure img { width:100%; height:auto; display:block; }
+figcaption { color:#555b63; font-size:13px; padding:6px 4px 0; }
+figcaption code { background:#ecebe6; color:#30343a; }
+details { margin:8px 0; } summary { cursor:pointer; font-weight:600; font-size:14px; color:var(--accent); }
+.example { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:16px 18px; margin:18px 0 26px; }
+.example > header { display:flex; flex-wrap:wrap; align-items:center; gap:10px; }
+.example > header h3 { margin:0; margin-right:auto; }
+.tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:10px; margin:12px 0; }
+.tile { background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:10px 12px; }
+.tile b { display:block; font-size:20px; } .tile span { color:var(--muted); font-size:13px; }
+.figs { display:grid; grid-template-columns:minmax(0,1fr); gap:12px; }
+.figs figure img { max-width:920px; margin:0 auto; }
+.parts { display:grid; gap:4px; }
+.install pre { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:10px 12px; overflow-x:auto; }
+footer { border-top:1px solid var(--line); margin-top:30px; padding:18px 0 40px; color:var(--muted); font-size:13.5px; }
+@media (max-width: 900px) {
+  .split, .two, .cards, .figs { grid-template-columns:minmax(0,1fr); }
+}
+@media (max-width: 640px) {
+  h1 { font-size:28px; } .lede { font-size:16.5px; }
+  .io { grid-template-columns:minmax(0,1fr); } svg.diagram.wide { display:none; } svg.diagram.tall { display:block; }
+  .example { padding:12px; } .card { padding:12px; }
+}
+
+.src .c { color: #3D7B7B; font-style: italic } /* Comment */
+.src .err { border: 1px solid #F00 } /* Error */
+.src .k { color: #008000; font-weight: bold } /* Keyword */
+.src .o { color: #666 } /* Operator */
+.src .ch { color: #3D7B7B; font-style: italic } /* Comment.Hashbang */
+.src .cm { color: #3D7B7B; font-style: italic } /* Comment.Multiline */
+.src .cp { color: #9C6500 } /* Comment.Preproc */
+.src .cpf { color: #3D7B7B; font-style: italic } /* Comment.PreprocFile */
+.src .c1 { color: #3D7B7B; font-style: italic } /* Comment.Single */
+.src .cs { color: #3D7B7B; font-style: italic } /* Comment.Special */
+.src .gd { color: #A00000 } /* Generic.Deleted */
+.src .ge { font-style: italic } /* Generic.Emph */
+.src .ges { font-weight: bold; font-style: italic } /* Generic.EmphStrong */
+.src .gr { color: #E40000 } /* Generic.Error */
+.src .gh { color: #000080; font-weight: bold } /* Generic.Heading */
+.src .gi { color: #008400 } /* Generic.Inserted */
+.src .go { color: #717171 } /* Generic.Output */
+.src .gp { color: #000080; font-weight: bold } /* Generic.Prompt */
+.src .gs { font-weight: bold } /* Generic.Strong */
+.src .gu { color: #800080; font-weight: bold } /* Generic.Subheading */
+.src .gt { color: #04D } /* Generic.Traceback */
+.src .kc { color: #008000; font-weight: bold } /* Keyword.Constant */
+.src .kd { color: #008000; font-weight: bold } /* Keyword.Declaration */
+.src .kn { color: #008000; font-weight: bold } /* Keyword.Namespace */
+.src .kp { color: #008000 } /* Keyword.Pseudo */
+.src .kr { color: #008000; font-weight: bold } /* Keyword.Reserved */
+.src .kt { color: #B00040 } /* Keyword.Type */
+.src .m { color: #666 } /* Literal.Number */
+.src .s { color: #BA2121 } /* Literal.String */
+.src .na { color: #687822 } /* Name.Attribute */
+.src .nb { color: #008000 } /* Name.Builtin */
+.src .nc { color: #00F; font-weight: bold } /* Name.Class */
+.src .no { color: #800 } /* Name.Constant */
+.src .nd { color: #A2F } /* Name.Decorator */
+.src .ni { color: #717171; font-weight: bold } /* Name.Entity */
+.src .ne { color: #CB3F38; font-weight: bold } /* Name.Exception */
+.src .nf { color: #00F } /* Name.Function */
+.src .nl { color: #767600 } /* Name.Label */
+.src .nn { color: #00F; font-weight: bold } /* Name.Namespace */
+.src .nt { color: #008000; font-weight: bold } /* Name.Tag */
+.src .nv { color: #19177C } /* Name.Variable */
+.src .ow { color: #A2F; font-weight: bold } /* Operator.Word */
+.src .w { color: #BBB } /* Text.Whitespace */
+.src .mb { color: #666 } /* Literal.Number.Bin */
+.src .mf { color: #666 } /* Literal.Number.Float */
+.src .mh { color: #666 } /* Literal.Number.Hex */
+.src .mi { color: #666 } /* Literal.Number.Integer */
+.src .mo { color: #666 } /* Literal.Number.Oct */
+.src .sa { color: #BA2121 } /* Literal.String.Affix */
+.src .sb { color: #BA2121 } /* Literal.String.Backtick */
+.src .sc { color: #BA2121 } /* Literal.String.Char */
+.src .dl { color: #BA2121 } /* Literal.String.Delimiter */
+.src .sd { color: #BA2121; font-style: italic } /* Literal.String.Doc */
+.src .s2 { color: #BA2121 } /* Literal.String.Double */
+.src .se { color: #AA5D1F; font-weight: bold } /* Literal.String.Escape */
+.src .sh { color: #BA2121 } /* Literal.String.Heredoc */
+.src .si { color: #A45A77; font-weight: bold } /* Literal.String.Interpol */
+.src .sx { color: #008000 } /* Literal.String.Other */
+.src .sr { color: #A45A77 } /* Literal.String.Regex */
+.src .s1 { color: #BA2121 } /* Literal.String.Single */
+.src .ss { color: #19177C } /* Literal.String.Symbol */
+.src .bp { color: #008000 } /* Name.Builtin.Pseudo */
+.src .fm { color: #00F } /* Name.Function.Magic */
+.src .vc { color: #19177C } /* Name.Variable.Class */
+.src .vg { color: #19177C } /* Name.Variable.Global */
+.src .vi { color: #19177C } /* Name.Variable.Instance */
+.src .vm { color: #19177C } /* Name.Variable.Magic */
+.src .il { color: #666 } /* Literal.Number.Integer.Long */
+@media (prefers-color-scheme: dark) {
+:root:not([data-theme="light"]) .src .c { color: #8B949E; font-style: italic } /* Comment */
+:root:not([data-theme="light"]) .src .err { color: #F85149 } /* Error */
+:root:not([data-theme="light"]) .src .esc { color: #E6EDF3 } /* Escape */
+:root:not([data-theme="light"]) .src .g { color: #E6EDF3 } /* Generic */
+:root:not([data-theme="light"]) .src .k { color: #FF7B72 } /* Keyword */
+:root:not([data-theme="light"]) .src .l { color: #A5D6FF } /* Literal */
+:root:not([data-theme="light"]) .src .n { color: #E6EDF3 } /* Name */
+:root:not([data-theme="light"]) .src .o { color: #FF7B72; font-weight: bold } /* Operator */
+:root:not([data-theme="light"]) .src .x { color: #E6EDF3 } /* Other */
+:root:not([data-theme="light"]) .src .p { color: #E6EDF3 } /* Punctuation */
+:root:not([data-theme="light"]) .src .ch { color: #8B949E; font-style: italic } /* Comment.Hashbang */
+:root:not([data-theme="light"]) .src .cm { color: #8B949E; font-style: italic } /* Comment.Multiline */
+:root:not([data-theme="light"]) .src .cp { color: #8B949E; font-weight: bold; font-style: italic } /* Comment.Preproc */
+:root:not([data-theme="light"]) .src .cpf { color: #8B949E; font-style: italic } /* Comment.PreprocFile */
+:root:not([data-theme="light"]) .src .c1 { color: #8B949E; font-style: italic } /* Comment.Single */
+:root:not([data-theme="light"]) .src .cs { color: #8B949E; font-weight: bold; font-style: italic } /* Comment.Special */
+:root:not([data-theme="light"]) .src .gd { color: #FFA198; background-color: #490202 } /* Generic.Deleted */
+:root:not([data-theme="light"]) .src .ge { color: #E6EDF3; font-style: italic } /* Generic.Emph */
+:root:not([data-theme="light"]) .src .ges { color: #E6EDF3; font-weight: bold; font-style: italic } /* Generic.EmphStrong */
+:root:not([data-theme="light"]) .src .gr { color: #FFA198 } /* Generic.Error */
+:root:not([data-theme="light"]) .src .gh { color: #79C0FF; font-weight: bold } /* Generic.Heading */
+:root:not([data-theme="light"]) .src .gi { color: #56D364; background-color: #0F5323 } /* Generic.Inserted */
+:root:not([data-theme="light"]) .src .go { color: #8B949E } /* Generic.Output */
+:root:not([data-theme="light"]) .src .gp { color: #8B949E } /* Generic.Prompt */
+:root:not([data-theme="light"]) .src .gs { color: #E6EDF3; font-weight: bold } /* Generic.Strong */
+:root:not([data-theme="light"]) .src .gu { color: #79C0FF } /* Generic.Subheading */
+:root:not([data-theme="light"]) .src .gt { color: #FF7B72 } /* Generic.Traceback */
+:root:not([data-theme="light"]) .src .g-Underline { color: #E6EDF3; text-decoration: underline } /* Generic.Underline */
+:root:not([data-theme="light"]) .src .kc { color: #79C0FF } /* Keyword.Constant */
+:root:not([data-theme="light"]) .src .kd { color: #FF7B72 } /* Keyword.Declaration */
+:root:not([data-theme="light"]) .src .kn { color: #FF7B72 } /* Keyword.Namespace */
+:root:not([data-theme="light"]) .src .kp { color: #79C0FF } /* Keyword.Pseudo */
+:root:not([data-theme="light"]) .src .kr { color: #FF7B72 } /* Keyword.Reserved */
+:root:not([data-theme="light"]) .src .kt { color: #FF7B72 } /* Keyword.Type */
+:root:not([data-theme="light"]) .src .ld { color: #79C0FF } /* Literal.Date */
+:root:not([data-theme="light"]) .src .m { color: #A5D6FF } /* Literal.Number */
+:root:not([data-theme="light"]) .src .s { color: #A5D6FF } /* Literal.String */
+:root:not([data-theme="light"]) .src .na { color: #E6EDF3 } /* Name.Attribute */
+:root:not([data-theme="light"]) .src .nb { color: #E6EDF3 } /* Name.Builtin */
+:root:not([data-theme="light"]) .src .nc { color: #F0883E; font-weight: bold } /* Name.Class */
+:root:not([data-theme="light"]) .src .no { color: #79C0FF; font-weight: bold } /* Name.Constant */
+:root:not([data-theme="light"]) .src .nd { color: #D2A8FF; font-weight: bold } /* Name.Decorator */
+:root:not([data-theme="light"]) .src .ni { color: #FFA657 } /* Name.Entity */
+:root:not([data-theme="light"]) .src .ne { color: #F0883E; font-weight: bold } /* Name.Exception */
+:root:not([data-theme="light"]) .src .nf { color: #D2A8FF; font-weight: bold } /* Name.Function */
+:root:not([data-theme="light"]) .src .nl { color: #79C0FF; font-weight: bold } /* Name.Label */
+:root:not([data-theme="light"]) .src .nn { color: #FF7B72 } /* Name.Namespace */
+:root:not([data-theme="light"]) .src .nx { color: #E6EDF3 } /* Name.Other */
+:root:not([data-theme="light"]) .src .py { color: #79C0FF } /* Name.Property */
+:root:not([data-theme="light"]) .src .nt { color: #7EE787 } /* Name.Tag */
+:root:not([data-theme="light"]) .src .nv { color: #79C0FF } /* Name.Variable */
+:root:not([data-theme="light"]) .src .ow { color: #FF7B72; font-weight: bold } /* Operator.Word */
+:root:not([data-theme="light"]) .src .pm { color: #E6EDF3 } /* Punctuation.Marker */
+:root:not([data-theme="light"]) .src .w { color: #6E7681 } /* Text.Whitespace */
+:root:not([data-theme="light"]) .src .mb { color: #A5D6FF } /* Literal.Number.Bin */
+:root:not([data-theme="light"]) .src .mf { color: #A5D6FF } /* Literal.Number.Float */
+:root:not([data-theme="light"]) .src .mh { color: #A5D6FF } /* Literal.Number.Hex */
+:root:not([data-theme="light"]) .src .mi { color: #A5D6FF } /* Literal.Number.Integer */
+:root:not([data-theme="light"]) .src .mo { color: #A5D6FF } /* Literal.Number.Oct */
+:root:not([data-theme="light"]) .src .sa { color: #79C0FF } /* Literal.String.Affix */
+:root:not([data-theme="light"]) .src .sb { color: #A5D6FF } /* Literal.String.Backtick */
+:root:not([data-theme="light"]) .src .sc { color: #A5D6FF } /* Literal.String.Char */
+:root:not([data-theme="light"]) .src .dl { color: #79C0FF } /* Literal.String.Delimiter */
+:root:not([data-theme="light"]) .src .sd { color: #A5D6FF } /* Literal.String.Doc */
+:root:not([data-theme="light"]) .src .s2 { color: #A5D6FF } /* Literal.String.Double */
+:root:not([data-theme="light"]) .src .se { color: #79C0FF } /* Literal.String.Escape */
+:root:not([data-theme="light"]) .src .sh { color: #79C0FF } /* Literal.String.Heredoc */
+:root:not([data-theme="light"]) .src .si { color: #A5D6FF } /* Literal.String.Interpol */
+:root:not([data-theme="light"]) .src .sx { color: #A5D6FF } /* Literal.String.Other */
+:root:not([data-theme="light"]) .src .sr { color: #79C0FF } /* Literal.String.Regex */
+:root:not([data-theme="light"]) .src .s1 { color: #A5D6FF } /* Literal.String.Single */
+:root:not([data-theme="light"]) .src .ss { color: #A5D6FF } /* Literal.String.Symbol */
+:root:not([data-theme="light"]) .src .bp { color: #E6EDF3 } /* Name.Builtin.Pseudo */
+:root:not([data-theme="light"]) .src .fm { color: #D2A8FF; font-weight: bold } /* Name.Function.Magic */
+:root:not([data-theme="light"]) .src .vc { color: #79C0FF } /* Name.Variable.Class */
+:root:not([data-theme="light"]) .src .vg { color: #79C0FF } /* Name.Variable.Global */
+:root:not([data-theme="light"]) .src .vi { color: #79C0FF } /* Name.Variable.Instance */
+:root:not([data-theme="light"]) .src .vm { color: #79C0FF } /* Name.Variable.Magic */
+:root:not([data-theme="light"]) .src .il { color: #A5D6FF } /* Literal.Number.Integer.Long */
+}
+:root[data-theme="dark"] .src .c { color: #8B949E; font-style: italic } /* Comment */
+:root[data-theme="dark"] .src .err { color: #F85149 } /* Error */
+:root[data-theme="dark"] .src .esc { color: #E6EDF3 } /* Escape */
+:root[data-theme="dark"] .src .g { color: #E6EDF3 } /* Generic */
+:root[data-theme="dark"] .src .k { color: #FF7B72 } /* Keyword */
+:root[data-theme="dark"] .src .l { color: #A5D6FF } /* Literal */
+:root[data-theme="dark"] .src .n { color: #E6EDF3 } /* Name */
+:root[data-theme="dark"] .src .o { color: #FF7B72; font-weight: bold } /* Operator */
+:root[data-theme="dark"] .src .x { color: #E6EDF3 } /* Other */
+:root[data-theme="dark"] .src .p { color: #E6EDF3 } /* Punctuation */
+:root[data-theme="dark"] .src .ch { color: #8B949E; font-style: italic } /* Comment.Hashbang */
+:root[data-theme="dark"] .src .cm { color: #8B949E; font-style: italic } /* Comment.Multiline */
+:root[data-theme="dark"] .src .cp { color: #8B949E; font-weight: bold; font-style: italic } /* Comment.Preproc */
+:root[data-theme="dark"] .src .cpf { color: #8B949E; font-style: italic } /* Comment.PreprocFile */
+:root[data-theme="dark"] .src .c1 { color: #8B949E; font-style: italic } /* Comment.Single */
+:root[data-theme="dark"] .src .cs { color: #8B949E; font-weight: bold; font-style: italic } /* Comment.Special */
+:root[data-theme="dark"] .src .gd { color: #FFA198; background-color: #490202 } /* Generic.Deleted */
+:root[data-theme="dark"] .src .ge { color: #E6EDF3; font-style: italic } /* Generic.Emph */
+:root[data-theme="dark"] .src .ges { color: #E6EDF3; font-weight: bold; font-style: italic } /* Generic.EmphStrong */
+:root[data-theme="dark"] .src .gr { color: #FFA198 } /* Generic.Error */
+:root[data-theme="dark"] .src .gh { color: #79C0FF; font-weight: bold } /* Generic.Heading */
+:root[data-theme="dark"] .src .gi { color: #56D364; background-color: #0F5323 } /* Generic.Inserted */
+:root[data-theme="dark"] .src .go { color: #8B949E } /* Generic.Output */
+:root[data-theme="dark"] .src .gp { color: #8B949E } /* Generic.Prompt */
+:root[data-theme="dark"] .src .gs { color: #E6EDF3; font-weight: bold } /* Generic.Strong */
+:root[data-theme="dark"] .src .gu { color: #79C0FF } /* Generic.Subheading */
+:root[data-theme="dark"] .src .gt { color: #FF7B72 } /* Generic.Traceback */
+:root[data-theme="dark"] .src .g-Underline { color: #E6EDF3; text-decoration: underline } /* Generic.Underline */
+:root[data-theme="dark"] .src .kc { color: #79C0FF } /* Keyword.Constant */
+:root[data-theme="dark"] .src .kd { color: #FF7B72 } /* Keyword.Declaration */
+:root[data-theme="dark"] .src .kn { color: #FF7B72 } /* Keyword.Namespace */
+:root[data-theme="dark"] .src .kp { color: #79C0FF } /* Keyword.Pseudo */
+:root[data-theme="dark"] .src .kr { color: #FF7B72 } /* Keyword.Reserved */
+:root[data-theme="dark"] .src .kt { color: #FF7B72 } /* Keyword.Type */
+:root[data-theme="dark"] .src .ld { color: #79C0FF } /* Literal.Date */
+:root[data-theme="dark"] .src .m { color: #A5D6FF } /* Literal.Number */
+:root[data-theme="dark"] .src .s { color: #A5D6FF } /* Literal.String */
+:root[data-theme="dark"] .src .na { color: #E6EDF3 } /* Name.Attribute */
+:root[data-theme="dark"] .src .nb { color: #E6EDF3 } /* Name.Builtin */
+:root[data-theme="dark"] .src .nc { color: #F0883E; font-weight: bold } /* Name.Class */
+:root[data-theme="dark"] .src .no { color: #79C0FF; font-weight: bold } /* Name.Constant */
+:root[data-theme="dark"] .src .nd { color: #D2A8FF; font-weight: bold } /* Name.Decorator */
+:root[data-theme="dark"] .src .ni { color: #FFA657 } /* Name.Entity */
+:root[data-theme="dark"] .src .ne { color: #F0883E; font-weight: bold } /* Name.Exception */
+:root[data-theme="dark"] .src .nf { color: #D2A8FF; font-weight: bold } /* Name.Function */
+:root[data-theme="dark"] .src .nl { color: #79C0FF; font-weight: bold } /* Name.Label */
+:root[data-theme="dark"] .src .nn { color: #FF7B72 } /* Name.Namespace */
+:root[data-theme="dark"] .src .nx { color: #E6EDF3 } /* Name.Other */
+:root[data-theme="dark"] .src .py { color: #79C0FF } /* Name.Property */
+:root[data-theme="dark"] .src .nt { color: #7EE787 } /* Name.Tag */
+:root[data-theme="dark"] .src .nv { color: #79C0FF } /* Name.Variable */
+:root[data-theme="dark"] .src .ow { color: #FF7B72; font-weight: bold } /* Operator.Word */
+:root[data-theme="dark"] .src .pm { color: #E6EDF3 } /* Punctuation.Marker */
+:root[data-theme="dark"] .src .w { color: #6E7681 } /* Text.Whitespace */
+:root[data-theme="dark"] .src .mb { color: #A5D6FF } /* Literal.Number.Bin */
+:root[data-theme="dark"] .src .mf { color: #A5D6FF } /* Literal.Number.Float */
+:root[data-theme="dark"] .src .mh { color: #A5D6FF } /* Literal.Number.Hex */
+:root[data-theme="dark"] .src .mi { color: #A5D6FF } /* Literal.Number.Integer */
+:root[data-theme="dark"] .src .mo { color: #A5D6FF } /* Literal.Number.Oct */
+:root[data-theme="dark"] .src .sa { color: #79C0FF } /* Literal.String.Affix */
+:root[data-theme="dark"] .src .sb { color: #A5D6FF } /* Literal.String.Backtick */
+:root[data-theme="dark"] .src .sc { color: #A5D6FF } /* Literal.String.Char */
+:root[data-theme="dark"] .src .dl { color: #79C0FF } /* Literal.String.Delimiter */
+:root[data-theme="dark"] .src .sd { color: #A5D6FF } /* Literal.String.Doc */
+:root[data-theme="dark"] .src .s2 { color: #A5D6FF } /* Literal.String.Double */
+:root[data-theme="dark"] .src .se { color: #79C0FF } /* Literal.String.Escape */
+:root[data-theme="dark"] .src .sh { color: #79C0FF } /* Literal.String.Heredoc */
+:root[data-theme="dark"] .src .si { color: #A5D6FF } /* Literal.String.Interpol */
+:root[data-theme="dark"] .src .sx { color: #A5D6FF } /* Literal.String.Other */
+:root[data-theme="dark"] .src .sr { color: #79C0FF } /* Literal.String.Regex */
+:root[data-theme="dark"] .src .s1 { color: #A5D6FF } /* Literal.String.Single */
+:root[data-theme="dark"] .src .ss { color: #A5D6FF } /* Literal.String.Symbol */
+:root[data-theme="dark"] .src .bp { color: #E6EDF3 } /* Name.Builtin.Pseudo */
+:root[data-theme="dark"] .src .fm { color: #D2A8FF; font-weight: bold } /* Name.Function.Magic */
+:root[data-theme="dark"] .src .vc { color: #79C0FF } /* Name.Variable.Class */
+:root[data-theme="dark"] .src .vg { color: #79C0FF } /* Name.Variable.Global */
+:root[data-theme="dark"] .src .vi { color: #79C0FF } /* Name.Variable.Instance */
+:root[data-theme="dark"] .src .vm { color: #79C0FF } /* Name.Variable.Magic */
+:root[data-theme="dark"] .src .il { color: #A5D6FF } /* Literal.Number.Integer.Long */</style></head>
+<body>
+<header class="hero"><div class="wrap">
+  <p class="eyebrow">v0.1.0 · MIT · Python ≥ 3.11 · runtime: numpy + robot_msgs</p>
+  <h1><code>robot_metrics</code></h1>
+  <p class="lede">Performance metrics for robot parts. Hand it robot_msgs streams (a whole recording, or a live stream
+  chunk by chunk) and it folds them into values with units. A metric is math plus a frozen config; the target stays
+  outside, where an objective turns a value into a verdict.</p>
+  <div class="links"><a href="https://github.com/zacharyyamaoka/robot_metrics">GitHub</a><a href="#install">Install</a><a href="#catalog">Catalog</a>
+  <a href="#gallery">Gallery</a><a href="https://github.com/zacharyyamaoka/robot_metrics/blob/main/docs/peps/0001-robot-metrics-v0.md">Design (PEP 0001)</a></div>
+</div></header>
+<nav class="toc"><div class="wrap"><a href="#glance">At a glance</a><a href="#api">API</a><a href="#catalog">Catalog</a>
+<a href="#aliases">Aliases</a><a href="#gallery">Gallery</a><a href="#install">Install</a></div></nav>
+<main class="wrap">
+
+<section id="glance">
+  <div class="split">
+    <div class="glance">
+      <div><b class="k">What goes in</b><p>robot_msgs streams, named in a <code>Run</code>: <code>target</code> and
+        <code>state</code> (<code>JointTrajectory</code>), the <code>plan</code> on its own ticks, a tool's
+        <code>PoseTrajectory</code>, plus labels (station, rung). A whole recording, or the same run in chunks.</p></div>
+      <div><b class="k">The functional core</b><p>A metric is a frozen dataclass: identity = base + config. Its state is a
+        value: <code>empty</code> → <code>update</code> → <code>merge</code> → <code>close</code> →
+        <code>compute</code>. Nothing hidden is mutated; a plain function sits beside each class.</p></div>
+      <div><b class="k">Offline = online</b><p>Live is the fold, chunk by chunk; offline is the same fold once. A
+        stop split across two chunks is found exactly. Runs merge into rungs, stations, a deployment.</p></div>
+      <div><b class="k">What comes out</b><p>Values in SI inside, shown in each alias's unit (deg, mm, ms, %); every
+        stop as an occurrence; a record with identity and version. Targets live on <code>Objective</code>s, outside
+        <code>compute()</code>: pass · fail · not_run.</p></div>
+    </div>
+    <div class="glance-code"><h2>API at a glance</h2>
+      <p class="cell-caption">A real run of a 1-DOF pendulum, its arm&#x27;s metrics from the catalog, the same fold offline and live, then a gate kept outside compute(). Every output is from the run that built this page.</p><div class='notebook'><pre class='src'><span class="kn">from</span><span class="w"> </span><span class="nn">robot_metrics</span><span class="w"> </span><span class="kn">import</span> <span class="n">Objective</span><span class="p">,</span> <span class="n">catalog</span><span class="p">,</span> <span class="n">summarize</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">robot_metrics.datasets</span><span class="w"> </span><span class="kn">import</span> <span class="n">onedof_round8</span>
+
+<span class="n">runs</span> <span class="o">=</span> <span class="n">onedof_round8</span><span class="o">.</span><span class="n">real_runs</span><span class="p">()</span>        <span class="c1"># 252 real plays: robot_msgs streams + labels</span>
+<span class="n">run</span> <span class="o">=</span> <span class="n">runs</span><span class="p">[</span><span class="mi">32</span><span class="p">]</span>
+<span class="n">run</span></pre><pre class='out'>Run(real station=can11 rung=0.9 kind=repeat · plan 318, state 318, target 318)</pre><pre class='src gap'><span class="n">arm</span> <span class="o">=</span> <span class="n">catalog</span><span class="o">.</span><span class="n">pendulum_arm</span><span class="p">(</span><span class="n">tip_length_m</span><span class="o">=</span><span class="mf">0.339</span><span class="p">)</span><span class="o">.</span><span class="n">collection</span><span class="p">()</span>
+<span class="n">arm</span></pre><pre class='out'>Collection(15 aliases over 5 states)</pre><pre class='src gap'><span class="n">offline</span> <span class="o">=</span> <span class="n">arm</span><span class="o">.</span><span class="n">values</span><span class="p">(</span><span class="n">arm</span><span class="o">.</span><span class="n">fold</span><span class="p">(</span><span class="n">run</span><span class="p">))</span>     <span class="c1"># offline: the whole recording, one fold</span>
+<span class="n">offline</span><span class="p">[</span><span class="s2">"tip stop error"</span><span class="p">]</span>               <span class="c1"># mm, at the tip</span></pre><pre class='out'>0.23094052947652116</pre><pre class='src gap'><span class="n">state</span> <span class="o">=</span> <span class="n">arm</span><span class="o">.</span><span class="n">empty</span><span class="p">()</span>                     <span class="c1"># live: the same fold, 7 samples at a time</span>
+<span class="k">for</span> <span class="n">chunk</span> <span class="ow">in</span> <span class="n">run</span><span class="o">.</span><span class="n">chunks</span><span class="p">(</span><span class="mi">7</span><span class="p">):</span>
+    <span class="n">state</span> <span class="o">=</span> <span class="n">arm</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="n">chunk</span><span class="p">)</span>
+<span class="n">live</span> <span class="o">=</span> <span class="n">arm</span><span class="o">.</span><span class="n">values</span><span class="p">(</span><span class="n">arm</span><span class="o">.</span><span class="n">close</span><span class="p">(</span><span class="n">state</span><span class="p">))</span>
+<span class="n">live</span> <span class="o">==</span> <span class="n">offline</span></pre><pre class='out'>True</pre><pre class='src gap'><span class="n">can11_runs</span> <span class="o">=</span> <span class="p">[</span><span class="n">run</span> <span class="k">for</span> <span class="n">run</span> <span class="ow">in</span> <span class="n">runs</span> <span class="k">if</span> <span class="n">run</span><span class="o">.</span><span class="n">labels</span><span class="p">[</span><span class="s2">"station"</span><span class="p">]</span> <span class="o">==</span> <span class="s2">"can11"</span><span class="p">]</span>
+<span class="n">strata</span> <span class="o">=</span> <span class="n">summarize</span><span class="p">(</span><span class="n">arm</span><span class="p">,</span> <span class="n">can11_runs</span><span class="p">,</span> <span class="n">by</span><span class="o">=</span><span class="p">(</span><span class="s2">"station"</span><span class="p">,</span> <span class="s2">"rung"</span><span class="p">))</span>
+<span class="n">every_stop</span> <span class="o">=</span> <span class="n">Objective</span><span class="p">(</span><span class="s2">"tip stop error"</span><span class="p">,</span> <span class="s2">"&lt;="</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="n">unit</span><span class="o">=</span><span class="s2">"mm"</span><span class="p">,</span> <span class="n">share</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">on</span><span class="o">=</span><span class="s2">"items"</span><span class="p">)</span>
+<span class="n">every_stop</span><span class="o">.</span><span class="n">judge</span><span class="p">(</span><span class="n">strata</span><span class="p">[(</span><span class="s2">"can11"</span><span class="p">,</span> <span class="mf">0.9</span><span class="p">)])</span><span class="o">.</span><span class="n">message</span></pre><pre class='out'>&#x27;13 of 14 pass, worst 1.143 mm (proposed)&#x27;</pre></div></div>
+  </div>
+  <svg class='diagram wide' viewBox='0 0 1100 318' role='img' aria-label='A run goes into a metric, whose state folds chunk by chunk; compute gives a value with a unit; an objective outside compute turns it into a verdict. Many runs are summarized by station and rung into strata that gates judge.'><defs><marker id='dg-head' viewBox='0 0 10 10' refX='9' refY='5' markerWidth='7' markerHeight='7' orient='auto-start-reverse'><path d='M0,0 L10,5 L0,10 z' class='dg-head'/></marker></defs><text class='dg-lane' x='8' y='22'>one run · offline or live</text><rect class='dg-box' x='8' y='36' width='192' height='76' rx='10'/><text class='dg-title' x='104.0' y='60'>Run</text><text class='dg-line' x='104.0' y='80'>robot_msgs streams</text><text class='dg-mono' x='104.0' y='99'>target · state · plan</text><rect class='dg-box dg-accent' x='232' y='36' width='192' height='76' rx='10'/><text class='dg-title' x='328.0' y='60'>Metric</text><text class='dg-line' x='328.0' y='80'>frozen config, state fold</text><text class='dg-mono' x='328.0' y='99'>update(state, chunk)</text><line class='dg-arrow' x1='202' y1='74.0' x2='229' y2='74.0' marker-end='url(#dg-head)'/><rect class='dg-box' x='456' y='36' width='192' height='76' rx='10'/><text class='dg-title' x='552.0' y='60'>Value</text><text class='dg-line' x='552.0' y='80'>SI inside, unit at display</text><text class='dg-mono' x='552.0' y='99'>values(state)</text><line class='dg-arrow' x1='426' y1='74.0' x2='453' y2='74.0' marker-end='url(#dg-head)'/><rect class='dg-box' x='680' y='36' width='192' height='76' rx='10'/><text class='dg-title' x='776.0' y='60'>Objective</text><text class='dg-line' x='776.0' y='80'>≤ 1 mm on 100 % of stops</text><text class='dg-mono' x='776.0' y='99'>outside compute()</text><line class='dg-arrow' x1='650' y1='74.0' x2='677' y2='74.0' marker-end='url(#dg-head)'/><rect class='dg-box' x='904' y='36' width='192' height='76' rx='10'/><text class='dg-title' x='1000.0' y='60'>Verdict</text><text class='dg-line' x='1000.0' y='80'>pass · fail · not_run</text><text class='dg-mono' x='1000.0' y='99'>judge(stratum)</text><line class='dg-arrow' x1='874' y1='74.0' x2='901' y2='74.0' marker-end='url(#dg-head)'/><text class='dg-lane' x='8' y='212'>many runs · a deployment</text><rect class='dg-box' x='8' y='226' width='192' height='76' rx='10'/><text class='dg-title' x='104.0' y='250'>Runs × N</text><text class='dg-line' x='104.0' y='270'>labels: station, rung</text><text class='dg-mono' x='104.0' y='289'>real · sim · replay</text><rect class='dg-box dg-accent' x='232' y='226' width='192' height='76' rx='10'/><text class='dg-title' x='328.0' y='250'>summarize</text><text class='dg-line' x='328.0' y='270'>fold each run, merge</text><text class='dg-mono' x='328.0' y='289'>by=station, rung</text><line class='dg-arrow' x1='202' y1='264.0' x2='229' y2='264.0' marker-end='url(#dg-head)'/><rect class='dg-box' x='456' y='226' width='192' height='76' rx='10'/><text class='dg-title' x='552.0' y='250'>Stratum</text><text class='dg-line' x='552.0' y='270'>values · tails · shares</text><text class='dg-mono' x='552.0' y='289'>n, p95, worst</text><line class='dg-arrow' x1='426' y1='264.0' x2='453' y2='264.0' marker-end='url(#dg-head)'/><rect class='dg-box' x='680' y='226' width='192' height='76' rx='10'/><text class='dg-title' x='776.0' y='250'>Gate</text><text class='dg-line' x='776.0' y='270'>every objective passes</text><text class='dg-mono' x='776.0' y='289'>Gate.judge()</text><line class='dg-arrow' x1='650' y1='264.0' x2='677' y2='264.0' marker-end='url(#dg-head)'/><rect class='dg-box' x='904' y='226' width='192' height='76' rx='10'/><text class='dg-title' x='1000.0' y='250'>Ladder</text><text class='dg-line' x='1000.0' y='270'>a verdict per cell</text><text class='dg-mono' x='1000.0' y='289'>highest_passing()</text><line class='dg-arrow' x1='874' y1='264.0' x2='901' y2='264.0' marker-end='url(#dg-head)'/><line class='dg-arrow dg-dash' x1='328.0' y1='116' x2='328.0' y2='222' marker-end='url(#dg-head)'/><text class='dg-note' x='338.0' y='170'>the same fold, per run, then merge states</text></svg><svg class='diagram tall' viewBox='0 0 360 1110' role='img' aria-label='A run goes into a metric, whose state folds chunk by chunk; compute gives a value with a unit; an objective outside compute turns it into a verdict. Many runs are summarized by station and rung into strata that gates judge.'><defs><marker id='dg-head' viewBox='0 0 10 10' refX='9' refY='5' markerWidth='7' markerHeight='7' orient='auto-start-reverse'><path d='M0,0 L10,5 L0,10 z' class='dg-head'/></marker></defs><text class='dg-lane' x='30.0' y='20'>one run · offline or live</text><rect class='dg-box' x='30.0' y='30' width='300' height='76' rx='10'/><text class='dg-title' x='180.0' y='54'>Run</text><text class='dg-line' x='180.0' y='74'>robot_msgs streams</text><text class='dg-mono' x='180.0' y='93'>target · state · plan</text><line class='dg-arrow' x1='180.0' y1='109' x2='180.0' y2='129' marker-end='url(#dg-head)'/><rect class='dg-box dg-accent' x='30.0' y='132' width='300' height='76' rx='10'/><text class='dg-title' x='180.0' y='156'>Metric</text><text class='dg-line' x='180.0' y='176'>frozen config, state fold</text><text class='dg-mono' x='180.0' y='195'>update(state, chunk)</text><line class='dg-arrow' x1='180.0' y1='211' x2='180.0' y2='231' marker-end='url(#dg-head)'/><rect class='dg-box' x='30.0' y='234' width='300' height='76' rx='10'/><text class='dg-title' x='180.0' y='258'>Value</text><text class='dg-line' x='180.0' y='278'>SI inside, unit at display</text><text class='dg-mono' x='180.0' y='297'>values(state)</text><line class='dg-arrow' x1='180.0' y1='313' x2='180.0' y2='333' marker-end='url(#dg-head)'/><rect class='dg-box' x='30.0' y='336' width='300' height='76' rx='10'/><text class='dg-title' x='180.0' y='360'>Objective</text><text class='dg-line' x='180.0' y='380'>≤ 1 mm on 100 % of stops</text><text class='dg-mono' x='180.0' y='399'>outside compute()</text><line class='dg-arrow' x1='180.0' y1='415' x2='180.0' y2='435' marker-end='url(#dg-head)'/><rect class='dg-box' x='30.0' y='438' width='300' height='76' rx='10'/><text class='dg-title' x='180.0' y='462'>Verdict</text><text class='dg-line' x='180.0' y='482'>pass · fail · not_run</text><text class='dg-mono' x='180.0' y='501'>judge(stratum)</text><text class='dg-lane' x='30.0' y='560'>many runs · a deployment</text><rect class='dg-box' x='30.0' y='570' width='300' height='76' rx='10'/><text class='dg-title' x='180.0' y='594'>Runs × N</text><text class='dg-line' x='180.0' y='614'>labels: station, rung</text><text class='dg-mono' x='180.0' y='633'>real · sim · replay</text><line class='dg-arrow' x1='180.0' y1='649' x2='180.0' y2='669' marker-end='url(#dg-head)'/><rect class='dg-box dg-accent' x='30.0' y='672' width='300' height='76' rx='10'/><text class='dg-title' x='180.0' y='696'>summarize</text><text class='dg-line' x='180.0' y='716'>fold each run, merge</text><text class='dg-mono' x='180.0' y='735'>by=station, rung</text><line class='dg-arrow' x1='180.0' y1='751' x2='180.0' y2='771' marker-end='url(#dg-head)'/><rect class='dg-box' x='30.0' y='774' width='300' height='76' rx='10'/><text class='dg-title' x='180.0' y='798'>Stratum</text><text class='dg-line' x='180.0' y='818'>values · tails · shares</text><text class='dg-mono' x='180.0' y='837'>n, p95, worst</text><line class='dg-arrow' x1='180.0' y1='853' x2='180.0' y2='873' marker-end='url(#dg-head)'/><rect class='dg-box' x='30.0' y='876' width='300' height='76' rx='10'/><text class='dg-title' x='180.0' y='900'>Gate</text><text class='dg-line' x='180.0' y='920'>every objective passes</text><text class='dg-mono' x='180.0' y='939'>Gate.judge()</text><line class='dg-arrow' x1='180.0' y1='955' x2='180.0' y2='975' marker-end='url(#dg-head)'/><rect class='dg-box' x='30.0' y='978' width='300' height='76' rx='10'/><text class='dg-title' x='180.0' y='1002'>Ladder</text><text class='dg-line' x='180.0' y='1022'>a verdict per cell</text><text class='dg-mono' x='180.0' y='1041'>highest_passing()</text></svg>
+  <div class="two" id="api">
+    <div><h3>The API in one table</h3><div class='scroll'><table class='api'><thead><tr><th>you have</th><th>you call</th><th>you get</th></tr></thead><tbody><tr><td>one recording</td><td><code>collection.fold(run)</code> · <code>metric(target, measured)</code></td><td>a closed state · a value in SI</td></tr><tr><td>a live stream</td><td><code>state = collection.update(state, chunk)</code>, then <code>close(state)</code></td><td>the same state as offline</td></tr><tr><td>the values</td><td><code>collection.values(state)</code></td><td>{alias: value} in each alias's display unit</td></tr><tr><td>many runs</td><td><code>summarize(collection, runs, by=("station", "rung"))</code></td><td>strata: values, tails (n, median, p95, worst), Wilson shares</td></tr><tr><td>a target</td><td><code>Objective(alias, "&lt;=", 1.0, share=1.0).judge(stratum)</code></td><td>a Verdict: pass · fail · not_run, with its owner</td></tr><tr><td>a picture</td><td><code>collection.view(alias, states)</code> → <code>plot()</code> · W&amp;B · Rerun</td><td>(fig, ax), a W&amp;B payload, an .rrd</td></tr><tr><td>one call</td><td><code>functional.error_stat(target, measured, statistic="rms")</code></td><td>the class run once: an SI number</td></tr><tr><td>a stored value</td><td><code>collection.records(state, run)</code></td><td>MetricRecord: value, unit, base, config, version</td></tr></tbody></table></div></div>
+    <div><h3>Math only, meaning from the data</h3><p class="cell-caption">A stock metric is math: one
+      <code>ErrorStat</code> serves servo tracking, the tool error of a five-bar and a feed-forward residual, by the
+      streams its alias hands it. A new row is a configured stock metric, never a new function; aliases with one
+      identity compute once.</p>
+      <h3>Layering</h3><p class="cell-caption"><code>robot_msgs</code> ← <code>robot_metrics</code> ← your tools
+      (diagnostics, sim-to-real, a part catalog). The core imports numpy, robot_msgs and the stdlib; matplotlib,
+      wandb and rerun-sdk only inside <code>plot()</code> and the adapters.</p></div>
+  </div>
+</section>
+
+<section id="catalog">
+  <h2>Catalog <span class="muted">· 7 stock metrics</span></h2>
+  <p class="section-lede">Every stock metric, grouped. Each card: its config, what it reads, what it returns,
+  whether it runs live, its function twin, and its stock view, drawn by <code>plot()</code> on CAN 11's real
+  round-8 runs (the performance gain on a sealed sim). Tracking 2 · Stops / dwell 1 · Timing 1 · Health / codes 1 · Repeatability 1 · Performance gain 1.</p>
+  <div class='scroll'><table class='overview'><thead><tr><th>group</th><th>metric</th><th>in</th><th>out</th><th>runs</th><th>function</th></tr></thead><tbody><tr><td rowspan='2'><b>Tracking</b><br><span class='muted'>How far the measured stream is from the target, row by row.</span></td><td><a href='#metric-errorstat'><code>ErrorStat</code></a></td><td><code>AlignedPair</code></td><td>a number (SI)</td><td>live</td><td><code>functional.error_stat</code></td></tr><tr><td><a href='#metric-errorpercentile'><code>ErrorPercentile</code></a></td><td><code>AlignedPair</code></td><td>a number (SI)</td><td>live</td><td><code>functional.error_percentile</code></td></tr><tr><td rowspan='1'><b>Stops / dwell</b><br><span class='muted'>What happens where the plan holds still: each stop's error, settle, overshoot.</span></td><td><a href='#metric-stopstat'><code>StopStat</code></a></td><td><code>AlignedPair</code></td><td>a number or a bool; every stop</td><td>live</td><td><code>functional.stop_stat</code></td></tr><tr><td rowspan='1'><b>Timing</b><br><span class='muted'>How late the response runs behind the command.</span></td><td><a href='#metric-timeoffset'><code>TimeOffset</code></a></td><td><code>CommandAndState</code></td><td>seconds</td><td>end of run</td><td><code>functional.time_offset</code></td></tr><tr><td rowspan='1'><b>Health / codes</b><br><span class='muted'>How often the drive reported a code: limiter, fault.</span></td><td><a href='#metric-codeshare'><code>CodeShare</code></a></td><td><code>AlignedPair</code></td><td>a share, 0 to 1</td><td>live</td><td><code>functional.code_share</code></td></tr><tr><td rowspan='1'><b>Repeatability</b><br><span class='muted'>The same command, played again: how far apart the answers land.</span></td><td><a href='#metric-repeatability'><code>Repeatability</code></a></td><td><code>Repeat</code></td><td>a number (SI): RP</td><td>end of run</td><td><code>functional.repeatability</code></td></tr><tr><td rowspan='1'><b>Performance gain</b><br><span class='muted'>Did a fitted model make the thing that matters better, on runs it never saw?</span></td><td><a href='#metric-performancegain'><code>PerformanceGain</code></a></td><td><code>HeldOutPair</code></td><td>nominal − fitted</td><td>end of run</td><td><code>functional.performance_gain</code></td></tr></tbody></table></div><div class='cards'>
+<article class="card" id="metric-errorstat">
+  <p class="eyebrow">Tracking</p>
+  <header><h4>ErrorStat</h4><span class="chip live">runs live</span>
+    <span class="chip">view: kpi_trend</span></header>
+  <p class="desc">One statistic of target - measured over the rows it reads: rms, max_abs or mean_abs.</p>
+  <figure><img src='img/catalog-errorstat.png' alt='Its stock view, drawn by &lt;code&gt;plot()&lt;/code&gt; (CAN 11&#x27;s real round-8 runs)'><figcaption>Its stock view, drawn by <code>plot()</code> (CAN 11's real round-8 runs)</figcaption></figure>
+  <div class="io">
+    <div><b>In</b> <code>AlignedPair</code> · <code>target</code>, <code>measured</code>: two robot_msgs streams on the same instants (<code>JointTrajectory</code>, or <code>PoseTrajectory</code> for a tool). <code>align()</code> puts a plan on the replies' instants first.<br><span class="muted">Reads
+      the error <code>compare(target, measured).error</code> of one <code>field</code> and <code>joint</code>, or a pose's position error.</span></div>
+    <div><b>Out</b> number · a number in the signal's SI unit (rad, m for a tool, rad/s, N·m).<br><span class="muted">State: (Σe², n, max|e|, Σ|e|): four numbers, shared by rms, max_abs and mean_abs.</span></div>
+  </div>
+  <p class="twin"><b>Function</b> <code>functional.error_stat(target, measured, **config)</code></p>
+  <p class="twin"><b>In the catalog</b> <span class='tag'>servo: tracking RMS</span> <span class='tag'>servo: tracking peak</span> <span class='tag'>arm: tip tracking RMS</span> <span class='tag'>chain: tool tracking RMS</span> <span class='tag'>chain: tool worst</span></p>
+  <details><summary>Config: 4 fields</summary><div class="scroll"><table class="config">
+    <thead><tr><th>field</th><th>default</th><th>values</th></tr></thead><tbody><tr><td><code>statistic</code></td><td><code>&#x27;rms&#x27;</code></td><td>rms · max_abs · mean_abs — rms | max_abs | mean_abs</td></tr><tr><td><code>rows</code></td><td><code>&#x27;all&#x27;</code></td><td>all · moving — all | moving (commanded speed not zero)</td></tr><tr><td><code>field</code></td><td><code>&#x27;positions&#x27;</code></td><td>positions · velocities · effort — positions | velocities | effort (a pose: its position error)</td></tr><tr><td><code>joint</code></td><td><code>0</code></td><td></td></tr></tbody></table>
+    </div></details>
+  <details><summary>The code that drew the picture (0.12 s)</summary><div class='notebook'><pre class='src'><span class="n">statistics</span> <span class="o">=</span> <span class="p">(</span><span class="s2">"rms"</span><span class="p">,</span> <span class="s2">"max_abs"</span><span class="p">,</span> <span class="s2">"mean_abs"</span><span class="p">)</span>
+<span class="n">aliases</span> <span class="o">=</span> <span class="p">[]</span>
+<span class="k">for</span> <span class="n">statistic</span> <span class="ow">in</span> <span class="n">statistics</span><span class="p">:</span>
+    <span class="n">metric</span> <span class="o">=</span> <span class="n">ErrorStat</span><span class="p">(</span><span class="n">statistic</span><span class="o">=</span><span class="n">statistic</span><span class="p">,</span> <span class="n">rows</span><span class="o">=</span><span class="s2">"moving"</span><span class="p">)</span>
+    <span class="n">aliases</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">Alias</span><span class="p">(</span><span class="n">statistic</span><span class="p">,</span> <span class="n">metric</span><span class="p">,</span> <span class="n">unit</span><span class="o">=</span><span class="s2">"deg"</span><span class="p">,</span> <span class="n">scale</span><span class="o">=</span><span class="n">DEGREES</span><span class="p">))</span>
+<span class="n">tracking</span> <span class="o">=</span> <span class="n">Collection</span><span class="p">(</span><span class="n">aliases</span><span class="p">)</span>
+<span class="n">tracking</span></pre><pre class='out'>Collection(3 aliases over 1 states)</pre><pre class='src gap'><span class="n">by_rung</span> <span class="o">=</span> <span class="n">summarize</span><span class="p">(</span><span class="n">tracking</span><span class="p">,</span> <span class="n">can11_runs</span><span class="p">,</span> <span class="n">by</span><span class="o">=</span><span class="p">(</span><span class="s2">"rung"</span><span class="p">,))</span>
+<span class="n">rungs</span><span class="p">,</span> <span class="n">values</span><span class="p">,</span> <span class="n">series</span> <span class="o">=</span> <span class="p">[],</span> <span class="p">[],</span> <span class="p">[]</span>
+<span class="k">for</span> <span class="p">(</span><span class="n">rung</span><span class="p">,),</span> <span class="n">stratum</span> <span class="ow">in</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">by_rung</span><span class="o">.</span><span class="n">items</span><span class="p">()):</span>
+    <span class="k">for</span> <span class="n">statistic</span> <span class="ow">in</span> <span class="n">statistics</span><span class="p">:</span>
+        <span class="n">rungs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">rung</span><span class="p">)</span>
+        <span class="n">values</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">stratum</span><span class="o">.</span><span class="n">values</span><span class="p">[</span><span class="n">statistic</span><span class="p">])</span>
+        <span class="n">series</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">statistic</span><span class="p">)</span>
+
+<span class="n">view</span> <span class="o">=</span> <span class="n">View</span><span class="p">(</span>
+    <span class="n">title</span><span class="o">=</span><span class="s2">"CAN 11 · tracking error while moving, by rung"</span><span class="p">,</span>
+    <span class="n">unit</span><span class="o">=</span><span class="s2">"deg"</span><span class="p">,</span>
+    <span class="n">hint</span><span class="o">=</span><span class="n">ErrorStat</span><span class="o">.</span><span class="n">hint</span><span class="p">,</span>
+    <span class="n">x</span><span class="o">=</span><span class="n">rungs</span><span class="p">,</span>
+    <span class="n">y</span><span class="o">=</span><span class="n">values</span><span class="p">,</span>
+    <span class="n">group</span><span class="o">=</span><span class="n">series</span><span class="p">,</span>
+    <span class="n">x_label</span><span class="o">=</span><span class="s2">"rung"</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="n">figure</span><span class="p">,</span> <span class="n">axes</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mf">6.4</span><span class="p">,</span> <span class="mf">3.3</span><span class="p">),</span> <span class="n">dpi</span><span class="o">=</span><span class="mi">150</span><span class="p">)</span>
+<span class="n">figure</span><span class="p">,</span> <span class="n">axes</span> <span class="o">=</span> <span class="n">plot</span><span class="p">(</span><span class="n">view</span><span class="p">,</span> <span class="n">ax</span><span class="o">=</span><span class="n">axes</span><span class="p">,</span> <span class="n">path</span><span class="o">=</span><span class="n">MEDIA</span> <span class="o">/</span> <span class="s2">"catalog-errorstat.png"</span><span class="p">)</span></pre></div></details>
+  <details><summary>References</summary><ul><li>robot_msgs.compare.ErrorStats</li><li>robotdx.diagnostics.stock (io-diagnostics main a7fc658) tracking_error</li><li>evo APE (Grupp 2017)</li></ul></details>
+</article>
+<article class="card" id="metric-errorpercentile">
+  <p class="eyebrow">Tracking</p>
+  <header><h4>ErrorPercentile</h4><span class="chip live">runs live</span>
+    <span class="chip">view: distribution</span></header>
+  <p class="desc">A percentile of |target - measured| over the rows it reads; at 95, robot_msgs&#x27; p95_abs.</p>
+  <figure><img src='img/catalog-errorpercentile.png' alt='Its stock view, drawn by &lt;code&gt;plot()&lt;/code&gt; (CAN 11&#x27;s real round-8 runs)'><figcaption>Its stock view, drawn by <code>plot()</code> (CAN 11's real round-8 runs)</figcaption></figure>
+  <div class="io">
+    <div><b>In</b> <code>AlignedPair</code> · <code>target</code>, <code>measured</code>: two robot_msgs streams on the same instants (<code>JointTrajectory</code>, or <code>PoseTrajectory</code> for a tool). <code>align()</code> puts a plan on the replies' instants first.<br><span class="muted">Reads
+      the same error signal as ErrorStat.</span></div>
+    <div><b>Out</b> number · a number in the signal's SI unit.<br><span class="muted">State: every |e| seen so far (exact; merge concatenates).</span></div>
+  </div>
+  <p class="twin"><b>Function</b> <code>functional.error_percentile(target, measured, **config)</code></p>
+  <p class="twin"><b>In the catalog</b> <span class='muted'>none yet: configure it in your part's metrics</span></p>
+  <details><summary>Config: 4 fields</summary><div class="scroll"><table class="config">
+    <thead><tr><th>field</th><th>default</th><th>values</th></tr></thead><tbody><tr><td><code>percentile</code></td><td><code>95.0</code></td><td></td></tr><tr><td><code>rows</code></td><td><code>&#x27;all&#x27;</code></td><td>all · moving</td></tr><tr><td><code>field</code></td><td><code>&#x27;positions&#x27;</code></td><td>positions · velocities · effort</td></tr><tr><td><code>joint</code></td><td><code>0</code></td><td></td></tr></tbody></table>
+    </div></details>
+  <details><summary>The code that drew the picture (0.15 s)</summary><div class='notebook'><pre class='src'><span class="n">aliases</span> <span class="o">=</span> <span class="p">[]</span>
+<span class="k">for</span> <span class="n">percentile</span> <span class="ow">in</span> <span class="p">(</span><span class="mf">50.0</span><span class="p">,</span> <span class="mf">95.0</span><span class="p">,</span> <span class="mf">99.0</span><span class="p">):</span>
+    <span class="n">metric</span> <span class="o">=</span> <span class="n">ErrorPercentile</span><span class="p">(</span><span class="n">percentile</span><span class="o">=</span><span class="n">percentile</span><span class="p">,</span> <span class="n">rows</span><span class="o">=</span><span class="s2">"moving"</span><span class="p">)</span>
+    <span class="n">aliases</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">Alias</span><span class="p">(</span><span class="sa">f</span><span class="s2">"p</span><span class="si">{</span><span class="n">percentile</span><span class="si">:</span><span class="s2">g</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span> <span class="n">metric</span><span class="p">,</span> <span class="n">unit</span><span class="o">=</span><span class="s2">"deg"</span><span class="p">,</span> <span class="n">scale</span><span class="o">=</span><span class="n">DEGREES</span><span class="p">))</span>
+<span class="n">percentiles</span> <span class="o">=</span> <span class="n">Collection</span><span class="p">(</span><span class="n">aliases</span><span class="p">)</span>
+<span class="n">percentiles</span></pre><pre class='out'>Collection(3 aliases over 3 states)</pre><pre class='src gap'><span class="n">by_rung</span> <span class="o">=</span> <span class="n">summarize</span><span class="p">(</span><span class="n">percentiles</span><span class="p">,</span> <span class="n">can11_runs</span><span class="p">,</span> <span class="n">by</span><span class="o">=</span><span class="p">(</span><span class="s2">"rung"</span><span class="p">,))</span>
+<span class="n">rungs</span><span class="p">,</span> <span class="n">values</span><span class="p">,</span> <span class="n">series</span> <span class="o">=</span> <span class="p">[],</span> <span class="p">[],</span> <span class="p">[]</span>
+<span class="k">for</span> <span class="p">(</span><span class="n">rung</span><span class="p">,),</span> <span class="n">stratum</span> <span class="ow">in</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">by_rung</span><span class="o">.</span><span class="n">items</span><span class="p">()):</span>
+    <span class="k">for</span> <span class="n">alias</span> <span class="ow">in</span> <span class="n">aliases</span><span class="p">:</span>
+        <span class="n">rungs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">rung</span><span class="p">)</span>
+        <span class="n">values</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">stratum</span><span class="o">.</span><span class="n">values</span><span class="p">[</span><span class="n">alias</span><span class="o">.</span><span class="n">name</span><span class="p">])</span>
+        <span class="n">series</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">alias</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+
+<span class="n">view</span> <span class="o">=</span> <span class="n">View</span><span class="p">(</span>
+    <span class="n">title</span><span class="o">=</span><span class="s2">"CAN 11 · |error| percentiles while moving, by rung"</span><span class="p">,</span>
+    <span class="n">unit</span><span class="o">=</span><span class="s2">"deg"</span><span class="p">,</span>
+    <span class="n">hint</span><span class="o">=</span><span class="s2">"kpi_trend"</span><span class="p">,</span>
+    <span class="n">x</span><span class="o">=</span><span class="n">rungs</span><span class="p">,</span>
+    <span class="n">y</span><span class="o">=</span><span class="n">values</span><span class="p">,</span>
+    <span class="n">group</span><span class="o">=</span><span class="n">series</span><span class="p">,</span>
+    <span class="n">x_label</span><span class="o">=</span><span class="s2">"rung"</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="n">figure</span><span class="p">,</span> <span class="n">axes</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mf">6.4</span><span class="p">,</span> <span class="mf">3.3</span><span class="p">),</span> <span class="n">dpi</span><span class="o">=</span><span class="mi">150</span><span class="p">)</span>
+<span class="n">figure</span><span class="p">,</span> <span class="n">axes</span> <span class="o">=</span> <span class="n">plot</span><span class="p">(</span><span class="n">view</span><span class="p">,</span> <span class="n">ax</span><span class="o">=</span><span class="n">axes</span><span class="p">,</span> <span class="n">path</span><span class="o">=</span><span class="n">MEDIA</span> <span class="o">/</span> <span class="s2">"catalog-errorpercentile.png"</span><span class="p">)</span></pre></div></details>
+  <details><summary>References</summary><ul><li>robot_msgs.compare.ErrorStats.p95_abs</li><li>robotdx.diagnostics.stock (io-diagnostics main a7fc658) tracking_error (statistic=&#x27;p95&#x27;)</li><li>numpy.percentile (linear)</li></ul></details>
+</article>
+<article class="card" id="metric-stopstat">
+  <p class="eyebrow">Stops / dwell</p>
+  <header><h4>StopStat</h4><span class="chip live">runs live</span>
+    <span class="chip">view: distribution</span></header>
+  <p class="desc">A quantity of every stop (a dwell &gt;= 0.25 s at zero commanded speed on one target that a move led into; its error the mean of the dwell&#x27;s last 50 ms), pooled over the stops it is given.</p>
+  <figure><img src='img/catalog-stopstat.png' alt='Its stock view, drawn by &lt;code&gt;plot()&lt;/code&gt; (CAN 11&#x27;s real round-8 runs)'><figcaption>Its stock view, drawn by <code>plot()</code> (CAN 11's real round-8 runs)</figcaption></figure>
+  <div class="io">
+    <div><b>In</b> <code>AlignedPair</code> · <code>target</code>, <code>measured</code>: two robot_msgs streams on the same instants (<code>JointTrajectory</code>, or <code>PoseTrajectory</code> for a tool). <code>align()</code> puts a plan on the replies' instants first.<br><span class="muted">Reads
+      the measured joint and the target's position and <b>velocities</b> (a stop is a dwell at zero commanded speed).</span></div>
+    <div><b>Out</b> number · bool (statistic=&quot;all&quot;) · a number in the signal's unit (s for <code>settle</code>), a bool for <code>statistic="all"</code>; its occurrences are every stop.<br><span class="muted">State: closed stops plus the open dwell, so a stop split across chunks is found exactly.</span></div>
+  </div>
+  <p class="twin"><b>Function</b> <code>functional.stop_stat(target, measured, **config)</code></p>
+  <p class="twin"><b>In the catalog</b> <span class='tag'>servo: stop error</span> <span class='tag'>servo: stop error p95</span> <span class='tag'>servo: stop error worst</span> <span class='tag'>servo: overshoot</span> <span class='tag'>servo: stops</span> <span class='tag'>arm: tip stop error</span> <span class='tag'>arm: tip stop p95</span> <span class='tag'>arm: tip stop worst</span> <span class='tag'>arm: tip settle</span> <span class='tag'>arm: all stops settled</span></p>
+  <details><summary>Config: 8 fields</summary><div class="scroll"><table class="config">
+    <thead><tr><th>field</th><th>default</th><th>values</th></tr></thead><tbody><tr><td><code>of</code></td><td><code>&#x27;error&#x27;</code></td><td>error · settle · settled · overshoot · count</td></tr><tr><td><code>statistic</code></td><td><code>&#x27;median&#x27;</code></td><td>median · max · p95 · p90 · mean · count · all · any p&lt;q&gt;</td></tr><tr><td><code>band</code></td><td><code>inf</code></td><td></td></tr><tr><td><code>include_last_dwell</code></td><td><code>True</code></td><td></td></tr><tr><td><code>joint</code></td><td><code>0</code></td><td></td></tr><tr><td><code>dwell_min_s</code></td><td><code>0.25</code></td><td></td></tr><tr><td><code>settle_window_s</code></td><td><code>0.05</code></td><td></td></tr><tr><td><code>count_first_dwell</code></td><td><code>False</code></td><td></td></tr></tbody></table>
+    </div></details>
+  <details><summary>The code that drew the picture (0.10 s)</summary><div class='notebook'><pre class='src'><span class="n">tip_scale</span> <span class="o">=</span> <span class="mf">1e3</span> <span class="o">*</span> <span class="n">lever_m</span>          <span class="c1"># rad at the joint -&gt; mm at the tip</span>
+<span class="n">tip_stop</span> <span class="o">=</span> <span class="n">Alias</span><span class="p">(</span><span class="s2">"tip stop error"</span><span class="p">,</span> <span class="n">StopStat</span><span class="p">(),</span> <span class="n">unit</span><span class="o">=</span><span class="s2">"mm"</span><span class="p">,</span> <span class="n">scale</span><span class="o">=</span><span class="n">tip_scale</span><span class="p">)</span>
+<span class="n">stops</span> <span class="o">=</span> <span class="n">Collection</span><span class="p">([</span><span class="n">tip_stop</span><span class="p">])</span>
+
+<span class="n">by_rung</span> <span class="o">=</span> <span class="n">summarize</span><span class="p">(</span><span class="n">stops</span><span class="p">,</span> <span class="n">can11_runs</span><span class="p">,</span> <span class="n">by</span><span class="o">=</span><span class="p">(</span><span class="s2">"rung"</span><span class="p">,))</span>
+<span class="n">states_by_rung</span> <span class="o">=</span> <span class="p">{}</span>
+<span class="k">for</span> <span class="p">(</span><span class="n">rung</span><span class="p">,),</span> <span class="n">stratum</span> <span class="ow">in</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">by_rung</span><span class="o">.</span><span class="n">items</span><span class="p">()):</span>
+    <span class="n">states_by_rung</span><span class="p">[</span><span class="sa">f</span><span class="s2">"rung </span><span class="si">{</span><span class="n">rung</span><span class="si">:</span><span class="s2">g</span><span class="si">}</span><span class="s2">"</span><span class="p">]</span> <span class="o">=</span> <span class="n">stratum</span><span class="o">.</span><span class="n">merged</span>
+
+<span class="n">view</span> <span class="o">=</span> <span class="n">stops</span><span class="o">.</span><span class="n">view</span><span class="p">(</span>
+    <span class="s2">"tip stop error"</span><span class="p">,</span>
+    <span class="n">states_by_rung</span><span class="p">,</span>
+    <span class="n">title</span><span class="o">=</span><span class="s2">"CAN 11 · every stop at the tip, by rung"</span><span class="p">,</span>
+    <span class="n">target</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
+    <span class="n">target_label</span><span class="o">=</span><span class="s2">"1 mm"</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="nb">len</span><span class="p">(</span><span class="n">view</span><span class="o">.</span><span class="n">y</span><span class="p">)</span></pre><pre class='out'>84</pre><pre class='src gap'><span class="n">figure</span><span class="p">,</span> <span class="n">axes</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mf">6.4</span><span class="p">,</span> <span class="mf">3.3</span><span class="p">),</span> <span class="n">dpi</span><span class="o">=</span><span class="mi">150</span><span class="p">)</span>
+<span class="n">figure</span><span class="p">,</span> <span class="n">axes</span> <span class="o">=</span> <span class="n">plot</span><span class="p">(</span><span class="n">view</span><span class="p">,</span> <span class="n">ax</span><span class="o">=</span><span class="n">axes</span><span class="p">,</span> <span class="n">path</span><span class="o">=</span><span class="n">MEDIA</span> <span class="o">/</span> <span class="s2">"catalog-stopstat.png"</span><span class="p">)</span></pre></div></details>
+  <details><summary>References</summary><ul><li>bam_rack_twin pendulum_score.stops / RobotDx T4 stop_accuracy</li><li>robotdx.diagnostics.stock (io-diagnostics main a7fc658) stop_error</li><li>robot_msgs.compare.goal (overshoot)</li><li>ISO 9283:1998 §7.2 (pose accuracy at a stop)</li></ul></details>
+</article>
+<article class="card" id="metric-timeoffset">
+  <p class="eyebrow">Timing</p>
+  <header><h4>TimeOffset</h4><span class="chip end">end of run</span>
+    <span class="chip">view: kpi_trend</span></header>
+  <p class="desc">How late the response runs behind the command (estimate_time_offset), one offset per run.</p>
+  <figure><img src='img/catalog-timeoffset.png' alt='Its stock view, drawn by &lt;code&gt;plot()&lt;/code&gt; (CAN 11&#x27;s real round-8 runs)'><figcaption>Its stock view, drawn by <code>plot()</code> (CAN 11's real round-8 runs)</figcaption></figure>
+  <div class="io">
+    <div><b>In</b> <code>CommandAndState</code> · <code>command</code> on its own ticks and <code>state</code> as it came back: not aligned (finding the offset is the metric's job).<br><span class="muted">Reads
+      two joint streams; <code>robot_msgs.compare.estimate_time_offset</code> on the whole run.</span></div>
+    <div><b>Out</b> number · seconds; across runs the median of the per-run offsets.<br><span class="muted">State: the run&#x27;s chunks until close, then one offset per run.</span></div>
+  </div>
+  <p class="twin"><b>Function</b> <code>functional.time_offset(command, measured, **config)</code></p>
+  <p class="twin"><b>In the catalog</b> <span class='tag'>servo: lag</span></p>
+  <details><summary>Config: 1 fields</summary><div class="scroll"><table class="config">
+    <thead><tr><th>field</th><th>default</th><th>values</th></tr></thead><tbody><tr><td><code>max_offset_s</code></td><td><code>0.25</code></td><td></td></tr></tbody></table>
+    </div></details>
+  <details><summary>The code that drew the picture (0.24 s)</summary><div class='notebook'><pre class='src'><span class="n">plan_and_replies</span> <span class="o">=</span> <span class="p">(</span><span class="s2">"plan"</span><span class="p">,</span> <span class="s2">"state"</span><span class="p">)</span>      <span class="c1"># the command on its own ticks, unaligned</span>
+<span class="n">lag</span> <span class="o">=</span> <span class="n">Alias</span><span class="p">(</span><span class="s2">"lag"</span><span class="p">,</span> <span class="n">TimeOffset</span><span class="p">(),</span> <span class="n">signal</span><span class="o">=</span><span class="n">plan_and_replies</span><span class="p">,</span> <span class="n">unit</span><span class="o">=</span><span class="s2">"ms"</span><span class="p">,</span> <span class="n">scale</span><span class="o">=</span><span class="mf">1e3</span><span class="p">,</span> <span class="n">across</span><span class="o">=</span><span class="s2">"median"</span><span class="p">)</span>
+<span class="n">timing</span> <span class="o">=</span> <span class="n">Collection</span><span class="p">([</span><span class="n">lag</span><span class="p">])</span>
+
+<span class="n">by_rung</span> <span class="o">=</span> <span class="n">summarize</span><span class="p">(</span><span class="n">timing</span><span class="p">,</span> <span class="n">can11_runs</span><span class="p">,</span> <span class="n">by</span><span class="o">=</span><span class="p">(</span><span class="s2">"rung"</span><span class="p">,))</span>
+<span class="n">rungs</span><span class="p">,</span> <span class="n">values</span> <span class="o">=</span> <span class="p">[],</span> <span class="p">[]</span>
+<span class="k">for</span> <span class="p">(</span><span class="n">rung</span><span class="p">,),</span> <span class="n">stratum</span> <span class="ow">in</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">by_rung</span><span class="o">.</span><span class="n">items</span><span class="p">()):</span>
+    <span class="n">rungs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">rung</span><span class="p">)</span>
+    <span class="n">values</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">stratum</span><span class="o">.</span><span class="n">values</span><span class="p">[</span><span class="s2">"lag"</span><span class="p">])</span>
+<span class="n">values</span></pre><pre class='out wrap'>[-1.3509788592810978, -0.4159051295981529, -0.15500572617070651, -0.4311921077819014, -0.5884703890635314, -0.7070208377339166]</pre><pre class='src gap'><span class="n">view</span> <span class="o">=</span> <span class="n">View</span><span class="p">(</span>
+    <span class="n">title</span><span class="o">=</span><span class="s2">"CAN 11 · reply lag behind the plan, median per rung"</span><span class="p">,</span>
+    <span class="n">unit</span><span class="o">=</span><span class="s2">"ms"</span><span class="p">,</span>
+    <span class="n">hint</span><span class="o">=</span><span class="n">TimeOffset</span><span class="o">.</span><span class="n">hint</span><span class="p">,</span>
+    <span class="n">x</span><span class="o">=</span><span class="n">rungs</span><span class="p">,</span>
+    <span class="n">y</span><span class="o">=</span><span class="n">values</span><span class="p">,</span>
+    <span class="n">x_label</span><span class="o">=</span><span class="s2">"rung"</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="n">figure</span><span class="p">,</span> <span class="n">axes</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mf">6.4</span><span class="p">,</span> <span class="mf">3.3</span><span class="p">),</span> <span class="n">dpi</span><span class="o">=</span><span class="mi">150</span><span class="p">)</span>
+<span class="n">figure</span><span class="p">,</span> <span class="n">axes</span> <span class="o">=</span> <span class="n">plot</span><span class="p">(</span><span class="n">view</span><span class="p">,</span> <span class="n">ax</span><span class="o">=</span><span class="n">axes</span><span class="p">,</span> <span class="n">path</span><span class="o">=</span><span class="n">MEDIA</span> <span class="o">/</span> <span class="s2">"catalog-timeoffset.png"</span><span class="p">)</span></pre></div></details>
+  <details><summary>References</summary><ul><li>robot_msgs.compare.estimate_time_offset</li><li>evo associate_trajectories offset_2</li></ul></details>
+</article>
+<article class="card" id="metric-codeshare">
+  <p class="eyebrow">Health / codes</p>
+  <header><h4>CodeShare</h4><span class="chip live">runs live</span>
+    <span class="chip">view: kpi_trend</span></header>
+  <p class="desc">The share of the state&#x27;s rows whose code channel holds one of the codes.</p>
+  <figure><img src='img/catalog-codeshare.png' alt='Its stock view, drawn by &lt;code&gt;plot()&lt;/code&gt; (CAN 11&#x27;s real round-8 runs)'><figcaption>Its stock view, drawn by <code>plot()</code> (CAN 11's real round-8 runs)</figcaption></figure>
+  <div class="io">
+    <div><b>In</b> <code>AlignedPair</code> · <code>target</code>, <code>measured</code>: two robot_msgs streams on the same instants (<code>JointTrajectory</code>, or <code>PoseTrajectory</code> for a tool). <code>align()</code> puts a plan on the replies' instants first.<br><span class="muted">Reads
+      the measured stream's <code>channels[channel]</code> (moteus fault / limiter codes).</span></div>
+    <div><b>Out</b> number · a share in [0, 1].<br><span class="muted">State: (hits, rows).</span></div>
+  </div>
+  <p class="twin"><b>Function</b> <code>functional.code_share(target, measured, **config)</code></p>
+  <p class="twin"><b>In the catalog</b> <span class='tag'>servo: limiter share</span></p>
+  <details><summary>Config: 2 fields</summary><div class="scroll"><table class="config">
+    <thead><tr><th>field</th><th>default</th><th>values</th></tr></thead><tbody><tr><td><code>codes</code></td><td><code>(97, 98, 99, 102)</code></td><td></td></tr><tr><td><code>channel</code></td><td><code>&#x27;fault&#x27;</code></td><td></td></tr></tbody></table>
+    </div></details>
+  <details><summary>The code that drew the picture (0.07 s)</summary><div class='notebook'><pre class='src'><span class="n">limiter_codes</span> <span class="o">=</span> <span class="n">CodeShare</span><span class="p">(</span><span class="n">codes</span><span class="o">=</span><span class="n">catalog</span><span class="o">.</span><span class="n">LIMITER_CODES</span><span class="p">)</span>     <span class="c1"># moteus 97, 98, 99, 102</span>
+<span class="n">limiter</span> <span class="o">=</span> <span class="n">Alias</span><span class="p">(</span><span class="s2">"limiter share"</span><span class="p">,</span> <span class="n">limiter_codes</span><span class="p">,</span> <span class="n">unit</span><span class="o">=</span><span class="s2">"%"</span><span class="p">,</span> <span class="n">scale</span><span class="o">=</span><span class="mf">100.0</span><span class="p">)</span>
+<span class="n">health</span> <span class="o">=</span> <span class="n">Collection</span><span class="p">([</span><span class="n">limiter</span><span class="p">])</span>
+
+<span class="n">by_station</span> <span class="o">=</span> <span class="n">summarize</span><span class="p">(</span><span class="n">health</span><span class="p">,</span> <span class="n">runs</span><span class="p">,</span> <span class="n">by</span><span class="o">=</span><span class="p">(</span><span class="s2">"station"</span><span class="p">,))</span>
+<span class="n">stations</span><span class="p">,</span> <span class="n">values</span> <span class="o">=</span> <span class="p">[],</span> <span class="p">[]</span>
+<span class="k">for</span> <span class="p">(</span><span class="n">station</span><span class="p">,),</span> <span class="n">stratum</span> <span class="ow">in</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">by_station</span><span class="o">.</span><span class="n">items</span><span class="p">()):</span>
+    <span class="n">stations</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">station</span><span class="p">)</span>
+    <span class="n">values</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">stratum</span><span class="o">.</span><span class="n">values</span><span class="p">[</span><span class="s2">"limiter share"</span><span class="p">])</span>
+<span class="n">values</span></pre><pre class='out'>[0.0, 0.0, 0.0, 0.0, 0.0, 0.006760868095463458]</pre><pre class='src gap'><span class="n">view</span> <span class="o">=</span> <span class="n">View</span><span class="p">(</span>
+    <span class="n">title</span><span class="o">=</span><span class="s2">"Rows the limiter or a fault shaped, per station"</span><span class="p">,</span>
+    <span class="n">unit</span><span class="o">=</span><span class="s2">"%"</span><span class="p">,</span>
+    <span class="n">hint</span><span class="o">=</span><span class="n">CodeShare</span><span class="o">.</span><span class="n">hint</span><span class="p">,</span>
+    <span class="n">x</span><span class="o">=</span><span class="n">stations</span><span class="p">,</span>
+    <span class="n">y</span><span class="o">=</span><span class="n">values</span><span class="p">,</span>
+    <span class="n">x_label</span><span class="o">=</span><span class="s2">"station (round 8, every rung)"</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="n">figure</span><span class="p">,</span> <span class="n">axes</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mf">6.4</span><span class="p">,</span> <span class="mf">3.3</span><span class="p">),</span> <span class="n">dpi</span><span class="o">=</span><span class="mi">150</span><span class="p">)</span>
+<span class="n">figure</span><span class="p">,</span> <span class="n">axes</span> <span class="o">=</span> <span class="n">plot</span><span class="p">(</span><span class="n">view</span><span class="p">,</span> <span class="n">ax</span><span class="o">=</span><span class="n">axes</span><span class="p">,</span> <span class="n">path</span><span class="o">=</span><span class="n">MEDIA</span> <span class="o">/</span> <span class="s2">"catalog-codeshare.png"</span><span class="p">)</span></pre></div></details>
+  <details><summary>References</summary><ul><li>moteus register 0x00f fault / limiter codes</li><li>robotdx.diagnostics.stock (io-diagnostics main a7fc658) fault_codes</li></ul></details>
+</article>
+<article class="card" id="metric-repeatability">
+  <p class="eyebrow">Repeatability</p>
+  <header><h4>Repeatability</h4><span class="chip end">end of run</span>
+    <span class="chip">view: kpi_trend</span></header>
+  <p class="desc">ISO 9283 RP at each stop over same-input repeats: mean(l) + k S_l, the worst stop index.</p>
+  <figure><img src='img/catalog-repeatability.png' alt='Its stock view, drawn by &lt;code&gt;plot()&lt;/code&gt; (CAN 11&#x27;s real round-8 runs)'><figcaption>Its stock view, drawn by <code>plot()</code> (CAN 11's real round-8 runs)</figcaption></figure>
+  <div class="io">
+    <div><b>In</b> <code>Repeat</code> · <code>Repeat(command, target, measured)</code>: one real repeat of one command per update; a repeat of another command is refused.<br><span class="muted">Reads
+      each repeat's stops (the stop kernel), the same stops across repeats.</span></div>
+    <div><b>Out</b> number · the signal's SI unit (rad at a joint): ISO 9283 RP, the worst stop index.<br><span class="muted">State: (command, each repeat&#x27;s stop errors).</span></div>
+  </div>
+  <p class="twin"><b>Function</b> <code>functional.repeatability(repeats, **config)</code></p>
+  <p class="twin"><b>In the catalog</b> <span class='muted'>none yet: configure it in your part's metrics</span></p>
+  <details><summary>Config: 2 fields</summary><div class="scroll"><table class="config">
+    <thead><tr><th>field</th><th>default</th><th>values</th></tr></thead><tbody><tr><td><code>k</code></td><td><code>3.0</code></td><td></td></tr><tr><td><code>include_last_dwell</code></td><td><code>True</code></td><td></td></tr></tbody></table>
+    </div></details>
+  <details><summary>The code that drew the picture (0.07 s)</summary><div class='notebook'><pre class='src'><span class="n">repeatability</span> <span class="o">=</span> <span class="n">Repeatability</span><span class="p">(</span><span class="n">k</span><span class="o">=</span><span class="mf">3.0</span><span class="p">)</span>
+<span class="n">rungs</span><span class="p">,</span> <span class="n">values</span> <span class="o">=</span> <span class="p">[],</span> <span class="p">[]</span>
+<span class="k">for</span> <span class="n">rung</span> <span class="ow">in</span> <span class="p">(</span><span class="mf">0.2</span><span class="p">,</span> <span class="mf">0.4</span><span class="p">,</span> <span class="mf">0.6</span><span class="p">,</span> <span class="mf">0.8</span><span class="p">,</span> <span class="mf">0.9</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">):</span>
+    <span class="n">repeats</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">run</span> <span class="ow">in</span> <span class="n">can11_runs</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">run</span><span class="o">.</span><span class="n">labels</span><span class="p">[</span><span class="s2">"rung"</span><span class="p">]</span> <span class="o">==</span> <span class="n">rung</span> <span class="ow">and</span> <span class="n">run</span><span class="o">.</span><span class="n">labels</span><span class="p">[</span><span class="s2">"kind"</span><span class="p">]</span> <span class="o">==</span> <span class="s2">"repeat"</span><span class="p">:</span>
+            <span class="n">repeat</span> <span class="o">=</span> <span class="n">Repeat</span><span class="p">((</span><span class="s2">"can11"</span><span class="p">,</span> <span class="n">rung</span><span class="p">),</span> <span class="n">run</span><span class="o">.</span><span class="n">streams</span><span class="p">[</span><span class="s2">"target"</span><span class="p">],</span> <span class="n">run</span><span class="o">.</span><span class="n">streams</span><span class="p">[</span><span class="s2">"state"</span><span class="p">])</span>
+            <span class="n">repeats</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">repeat</span><span class="p">)</span>
+    <span class="n">state</span> <span class="o">=</span> <span class="n">repeatability</span><span class="o">.</span><span class="n">fold</span><span class="p">(</span><span class="n">repeats</span><span class="p">)</span>
+    <span class="n">rp_tip_mm</span> <span class="o">=</span> <span class="n">repeatability</span><span class="o">.</span><span class="n">compute</span><span class="p">(</span><span class="n">state</span><span class="p">)</span> <span class="o">*</span> <span class="n">lever_m</span> <span class="o">*</span> <span class="mf">1e3</span>
+    <span class="n">rungs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">rung</span><span class="p">)</span>
+    <span class="n">values</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">rp_tip_mm</span><span class="p">)</span>
+<span class="n">values</span></pre><pre class='out wrap'>[0.8171440867784914, 1.3881499566668791, 0.35425065861733857, 0.26204103957164976, 0.3872953748015474, 0.2423048508115091]</pre><pre class='src gap'><span class="n">view</span> <span class="o">=</span> <span class="n">View</span><span class="p">(</span>
+    <span class="n">title</span><span class="o">=</span><span class="s2">"CAN 11 · ISO 9283 RP (k=3) at the tip, 5 repeats per rung"</span><span class="p">,</span>
+    <span class="n">unit</span><span class="o">=</span><span class="s2">"mm"</span><span class="p">,</span>
+    <span class="n">hint</span><span class="o">=</span><span class="n">Repeatability</span><span class="o">.</span><span class="n">hint</span><span class="p">,</span>
+    <span class="n">x</span><span class="o">=</span><span class="n">rungs</span><span class="p">,</span>
+    <span class="n">y</span><span class="o">=</span><span class="n">values</span><span class="p">,</span>
+    <span class="n">x_label</span><span class="o">=</span><span class="s2">"rung"</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="n">figure</span><span class="p">,</span> <span class="n">axes</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mf">6.4</span><span class="p">,</span> <span class="mf">3.3</span><span class="p">),</span> <span class="n">dpi</span><span class="o">=</span><span class="mi">150</span><span class="p">)</span>
+<span class="n">figure</span><span class="p">,</span> <span class="n">axes</span> <span class="o">=</span> <span class="n">plot</span><span class="p">(</span><span class="n">view</span><span class="p">,</span> <span class="n">ax</span><span class="o">=</span><span class="n">axes</span><span class="p">,</span> <span class="n">path</span><span class="o">=</span><span class="n">MEDIA</span> <span class="o">/</span> <span class="s2">"catalog-repeatability.png"</span><span class="p">)</span></pre></div></details>
+  <details><summary>References</summary><ul><li>ISO 9283:1998 §7.2.2 pose repeatability</li><li>robotdx.diagnostics.stock (io-diagnostics main a7fc658) pose_accuracy</li><li>robot_msgs.compare.aggregate</li></ul></details>
+</article>
+<article class="card" id="metric-performancegain">
+  <p class="eyebrow">Performance gain</p>
+  <header><h4>PerformanceGain</h4><span class="chip end">end of run</span>
+    <span class="chip">view: kpi_trend</span></header>
+  <p class="desc">A metric on held-out runs with nominal and with fitted values; nominal minus fitted.</p>
+  <figure><img src='img/catalog-performancegain.png' alt='Its stock view, drawn by &lt;code&gt;plot()&lt;/code&gt; (a sealed sim&#x27;s held-out runs)'><figcaption>Its stock view, drawn by <code>plot()</code> (a sealed sim's held-out runs)</figcaption></figure>
+  <div class="io">
+    <div><b>In</b> <code>HeldOutPair</code> · <code>HeldOutPair(nominal, fitted)</code>: the same held-out runs played with the nominal values and with the fitted ones.<br><span class="muted">Reads
+      any metric or alias, folded over each side's runs.</span></div>
+    <div><b>Out</b> number · the inner metric's unit: nominal minus fitted (positive = the fit helped).<br><span class="muted">State: (nominal value, fitted value).</span></div>
+  </div>
+  <p class="twin"><b>Function</b> <code>functional.performance_gain(pair, **config)</code></p>
+  <p class="twin"><b>In the catalog</b> <span class='muted'>none yet: configure it in your part's metrics</span></p>
+  <details><summary>Config: 2 fields</summary><div class="scroll"><table class="config">
+    <thead><tr><th>field</th><th>default</th><th>values</th></tr></thead><tbody><tr><td><code>metric</code></td><td><code>ErrorStat(statistic=&#x27;rms&#x27;, rows=&#x27;all&#x27;, field=&#x27;positions&#x27;, joint=0)</code></td><td></td></tr><tr><td><code>signal</code></td><td><code>(&#x27;target&#x27;, &#x27;state&#x27;)</code></td><td></td></tr></tbody></table>
+    </div></details>
+  <details><summary>The code that drew the picture (0.12 s)</summary><div class='notebook'><pre class='src'><span class="n">sealed_file</span> <span class="o">=</span> <span class="n">pathlib</span><span class="o">.</span><span class="n">Path</span><span class="p">(</span><span class="n">TESTS_DATA</span><span class="p">,</span> <span class="s2">"sealed_ladder_held_out.json"</span><span class="p">)</span>
+<span class="n">sealed</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">sealed_file</span><span class="o">.</span><span class="n">read_text</span><span class="p">())</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">held_out</span><span class="p">(</span><span class="n">rows</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""The sealed sim's held-out plateaus as runs: feed-forward vs measured torque."""</span>
+    <span class="n">out</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">rows</span><span class="p">:</span>
+        <span class="n">t</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">row</span><span class="p">[</span><span class="s2">"t"</span><span class="p">])</span>
+        <span class="n">zeros</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">t</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>
+        <span class="n">speed</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">row</span><span class="p">[</span><span class="s2">"speed"</span><span class="p">])[:,</span> <span class="kc">None</span><span class="p">]</span>
+        <span class="n">feedforward</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">row</span><span class="p">[</span><span class="s2">"feedforward"</span><span class="p">])[:,</span> <span class="kc">None</span><span class="p">]</span>
+        <span class="n">torque</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">row</span><span class="p">[</span><span class="s2">"torque"</span><span class="p">])[:,</span> <span class="kc">None</span><span class="p">]</span>
+        <span class="n">header</span> <span class="o">=</span> <span class="n">Header</span><span class="p">(</span><span class="n">stamp</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">frame_id</span><span class="o">=</span><span class="s2">"output"</span><span class="p">)</span>
+        <span class="n">target</span> <span class="o">=</span> <span class="n">JointTrajectory</span><span class="p">(</span>
+            <span class="n">t</span><span class="o">=</span><span class="n">t</span><span class="p">,</span> <span class="n">joint_names</span><span class="o">=</span><span class="p">(</span><span class="s2">"servo"</span><span class="p">,),</span> <span class="n">positions</span><span class="o">=</span><span class="n">zeros</span><span class="p">,</span> <span class="n">velocities</span><span class="o">=</span><span class="n">speed</span><span class="p">,</span>
+            <span class="n">effort</span><span class="o">=</span><span class="n">feedforward</span><span class="p">,</span> <span class="n">header</span><span class="o">=</span><span class="n">header</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">state</span> <span class="o">=</span> <span class="n">JointTrajectory</span><span class="p">(</span>
+            <span class="n">t</span><span class="o">=</span><span class="n">t</span><span class="p">,</span> <span class="n">joint_names</span><span class="o">=</span><span class="p">(</span><span class="s2">"servo"</span><span class="p">,),</span> <span class="n">positions</span><span class="o">=</span><span class="n">zeros</span><span class="p">,</span> <span class="n">velocities</span><span class="o">=</span><span class="n">speed</span><span class="p">,</span>
+            <span class="n">effort</span><span class="o">=</span><span class="n">torque</span><span class="p">,</span> <span class="n">header</span><span class="o">=</span><span class="n">header</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">streams</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"target"</span><span class="p">:</span> <span class="n">target</span><span class="p">,</span> <span class="s2">"state"</span><span class="p">:</span> <span class="n">state</span><span class="p">}</span>
+        <span class="n">out</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">Run</span><span class="p">(</span><span class="nb">id</span><span class="o">=</span><span class="n">row</span><span class="p">[</span><span class="s2">"id"</span><span class="p">],</span> <span class="n">streams</span><span class="o">=</span><span class="n">streams</span><span class="p">,</span> <span class="n">provenance</span><span class="o">=</span><span class="s2">"sim"</span><span class="p">))</span>
+    <span class="k">return</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">out</span><span class="p">)</span>
+
+<span class="n">residual_rms</span> <span class="o">=</span> <span class="n">ErrorStat</span><span class="p">(</span><span class="n">statistic</span><span class="o">=</span><span class="s2">"rms"</span><span class="p">,</span> <span class="n">field</span><span class="o">=</span><span class="s2">"effort"</span><span class="p">)</span>
+<span class="n">residual</span> <span class="o">=</span> <span class="n">Alias</span><span class="p">(</span><span class="s2">"feed-forward residual RMS"</span><span class="p">,</span> <span class="n">residual_rms</span><span class="p">,</span> <span class="n">unit</span><span class="o">=</span><span class="s2">"N·m"</span><span class="p">)</span>
+
+<span class="n">nominal_runs</span> <span class="o">=</span> <span class="n">held_out</span><span class="p">(</span><span class="n">sealed</span><span class="p">[</span><span class="s2">"runs"</span><span class="p">][</span><span class="s2">"nominal"</span><span class="p">])</span>
+<span class="n">fitted_runs</span> <span class="o">=</span> <span class="n">held_out</span><span class="p">(</span><span class="n">sealed</span><span class="p">[</span><span class="s2">"runs"</span><span class="p">][</span><span class="s2">"fitted"</span><span class="p">])</span>
+<span class="n">pair</span> <span class="o">=</span> <span class="n">HeldOutPair</span><span class="p">(</span><span class="n">nominal</span><span class="o">=</span><span class="n">nominal_runs</span><span class="p">,</span> <span class="n">fitted</span><span class="o">=</span><span class="n">fitted_runs</span><span class="p">)</span>
+
+<span class="n">gain</span> <span class="o">=</span> <span class="n">PerformanceGain</span><span class="p">(</span><span class="n">metric</span><span class="o">=</span><span class="n">residual</span><span class="p">)</span>
+<span class="n">state</span> <span class="o">=</span> <span class="n">gain</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">gain</span><span class="o">.</span><span class="n">empty</span><span class="p">(),</span> <span class="n">pair</span><span class="p">)</span>
+<span class="n">gain</span><span class="o">.</span><span class="n">sides</span><span class="p">(</span><span class="n">state</span><span class="p">)</span></pre><pre class='out'>(0.22196952061068506, 0.004184752627886935)</pre><pre class='src'><span class="n">gain</span><span class="o">.</span><span class="n">compute</span><span class="p">(</span><span class="n">state</span><span class="p">)</span></pre><pre class='out'>0.21778476798279814</pre><pre class='src gap'><span class="n">view</span> <span class="o">=</span> <span class="n">View</span><span class="p">(</span>
+    <span class="n">title</span><span class="o">=</span><span class="s2">"Residual RMS on held-out runs: nominal vs fitted (sealed sim)"</span><span class="p">,</span>
+    <span class="n">unit</span><span class="o">=</span><span class="s2">"N·m"</span><span class="p">,</span>
+    <span class="n">hint</span><span class="o">=</span><span class="s2">"kpi_trend"</span><span class="p">,</span>
+    <span class="n">x</span><span class="o">=</span><span class="p">[</span><span class="s2">"nominal"</span><span class="p">,</span> <span class="s2">"fitted"</span><span class="p">],</span>
+    <span class="n">y</span><span class="o">=</span><span class="nb">list</span><span class="p">(</span><span class="n">gain</span><span class="o">.</span><span class="n">sides</span><span class="p">(</span><span class="n">state</span><span class="p">)),</span>
+    <span class="n">x_label</span><span class="o">=</span><span class="s2">"the same held-out runs, played with"</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="n">figure</span><span class="p">,</span> <span class="n">axes</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mf">6.4</span><span class="p">,</span> <span class="mf">3.3</span><span class="p">),</span> <span class="n">dpi</span><span class="o">=</span><span class="mi">150</span><span class="p">)</span>
+<span class="n">figure</span><span class="p">,</span> <span class="n">axes</span> <span class="o">=</span> <span class="n">plot</span><span class="p">(</span><span class="n">view</span><span class="p">,</span> <span class="n">ax</span><span class="o">=</span><span class="n">axes</span><span class="p">,</span> <span class="n">path</span><span class="o">=</span><span class="n">MEDIA</span> <span class="o">/</span> <span class="s2">"catalog-performancegain.png"</span><span class="p">)</span></pre></div></details>
+  <details><summary>References</summary><ul><li>hold-out validation (Hastie, Tibshirani, Friedman, ESL §7.2)</li><li>robot_models select_best</li></ul></details>
+</article></div>
+</section>
+
+<section id="aliases">
+  <h2>Aliases, per part type</h2>
+  <p class="section-lede">A semantic name is an alias: a label, a display unit and the streams it reads, over a
+  configured stock metric. Its identity is the metric's, so aliases with one identity share one state, and every
+  <code>StopStat</code> on one signal shares one pass of the stop kernel (the <b>state</b> column).</p>
+  <h3><code>integrated_servo</code> <span class='muted'>· 9 aliases over 5 states</span></h3><p class='section-lede'>The servo judged at its output: the plan at each reply's instant vs the reply.</p><div class='scroll'><table class='aliases'><thead><tr><th>alias</th><th>unit · SI→unit</th><th>= base + frozen config</th><th>reads</th><th>across runs</th><th>runs</th><th>state</th><th>note</th></tr></thead><tbody><tr><td><b>tracking RMS</b></td><td>deg ×57.3</td><td><code>ErrorStat(rows=&#x27;moving&#x27;)</code></td><td><code>target/state</code></td><td>median</td><td>live</td><td class='num'>#1</td><td class='muted note'>RMS of target - measured over the rows the plan moves; a rung reads the median of its runs</td></tr><tr><td><b>tracking peak</b></td><td>deg ×57.3</td><td><code>ErrorStat(statistic=&#x27;max_abs&#x27;)</code></td><td><code>target/state</code></td><td>max</td><td>live</td><td class='num'>#2</td><td class='muted note'>the worst |error| of the run, every row</td></tr><tr><td><b>stop error</b></td><td>deg ×57.3</td><td><code>StopStat()</code></td><td><code>target/state</code></td><td>pool</td><td>live</td><td class='num'>#3</td><td class='muted note'>the median |error| of every stop, pooled over the runs</td></tr><tr><td><b>stop error p95</b></td><td>deg ×57.3</td><td><code>StopStat(statistic=&#x27;p95&#x27;)</code></td><td><code>target/state</code></td><td>pool</td><td>live</td><td class='num'>#3</td><td class='muted note'></td></tr><tr><td><b>stop error worst</b></td><td>deg ×57.3</td><td><code>StopStat(statistic=&#x27;max&#x27;)</code></td><td><code>target/state</code></td><td>pool</td><td>live</td><td class='num'>#3</td><td class='muted note'></td></tr><tr><td><b>overshoot</b></td><td>deg ×57.3</td><td><code>StopStat(of=&#x27;overshoot&#x27;, statistic=&#x27;max&#x27;)</code></td><td><code>target/state</code></td><td>pool</td><td>live</td><td class='num'>#3</td><td class='muted note'>the largest robot_msgs.compare.goal overshoot over the stops (0 with none)</td></tr><tr><td><b>lag</b></td><td>ms ×1000</td><td><code>TimeOffset()</code></td><td><code>plan/state</code></td><td>median</td><td>end of run</td><td class='num'>#4</td><td class='muted note'>estimate_time_offset(plan, state); negative on the rack: a reply is stamped after its tick</td></tr><tr><td><b>limiter share</b></td><td>% ×100</td><td><code>CodeShare()</code></td><td><code>target/state</code></td><td>pool</td><td>live</td><td class='num'>#5</td><td class='muted note'>rows the limiter or a fault shaped, pooled over the runs&#x27; rows</td></tr><tr><td><b>stops</b></td><td>—</td><td><code>StopStat(of=&#x27;count&#x27;, statistic=&#x27;count&#x27;)</code></td><td><code>target/state</code></td><td>pool</td><td>live</td><td class='num'>#3</td><td class='muted note'>how many stops the runs made</td></tr></tbody></table></div><h3><code>pendulum_arm</code> <span class='muted'>· 15 aliases over 5 states (its 6 + the servo's 9)</span></h3><p class='section-lede'>An assembly: the servo plus a 339 mm lever. Every tip row is the servo's state read through the lever (<code>Alias.through(..., scale_by="lever_m")</code>), so the arm adds no computation of its own.</p><div class='scroll'><table class='aliases'><thead><tr><th>alias</th><th>unit · SI→unit</th><th>= base + frozen config</th><th>reads</th><th>across runs</th><th>runs</th><th>state</th><th>note</th></tr></thead><tbody><tr><td><b>tip tracking RMS</b></td><td>mm ×339</td><td><code>ErrorStat(rows=&#x27;moving&#x27;)</code></td><td><code>target/state</code></td><td>median</td><td>live</td><td class='num'>#1</td><td class='muted note'>tip = joint x lever</td></tr><tr><td><b>tip stop error</b></td><td>mm ×339</td><td><code>StopStat()</code></td><td><code>target/state</code></td><td>pool</td><td>live</td><td class='num'>#3</td><td class='muted note'>tip = joint x lever</td></tr><tr><td><b>tip stop p95</b></td><td>mm ×339</td><td><code>StopStat(statistic=&#x27;p95&#x27;)</code></td><td><code>target/state</code></td><td>pool</td><td>live</td><td class='num'>#3</td><td class='muted note'>tip = joint x lever</td></tr><tr><td><b>tip stop worst</b></td><td>mm ×339</td><td><code>StopStat(statistic=&#x27;max&#x27;)</code></td><td><code>target/state</code></td><td>pool</td><td>live</td><td class='num'>#3</td><td class='muted note'>tip = joint x lever</td></tr><tr><td><b>tip settle</b></td><td>s</td><td><code>StopStat(of=&#x27;settle&#x27;, band=0.00295)</code></td><td><code>target/state</code></td><td>pool</td><td>live</td><td class='num'>#3</td><td class='muted note'>the median stop&#x27;s settle time into 1 mm at the tip (None when that median never settled)</td></tr><tr><td><b>all stops settled</b></td><td>—</td><td><code>StopStat(of=&#x27;settled&#x27;, statistic=&#x27;all&#x27;, band=0.00295)</code></td><td><code>target/state</code></td><td>pool</td><td>live</td><td class='num'>#3</td><td class='muted note'>every stop of the run settled into 1 mm at the tip (a bool: summarized as a Wilson share)</td></tr></tbody></table></div><h3><code>rigid_body_chain</code> <span class='muted'>· 4 aliases over 3 states</span></h3><p class='section-lede'>A rigid chain (the five-bar, or any serial arm): each joint's RMS and the tool's position error from two PoseTrajectories.</p><div class='scroll'><table class='aliases'><thead><tr><th>alias</th><th>unit · SI→unit</th><th>= base + frozen config</th><th>reads</th><th>across runs</th><th>runs</th><th>state</th><th>note</th></tr></thead><tbody><tr><td><b>j2/tracking RMS</b></td><td>deg ×57.3</td><td><code>ErrorStat()</code></td><td><code>target/state</code></td><td>pool</td><td>live</td><td class='num'>#1</td><td class='muted note'></td></tr><tr><td><b>c1/tracking RMS</b></td><td>deg ×57.3</td><td><code>ErrorStat(joint=1)</code></td><td><code>target/state</code></td><td>pool</td><td>live</td><td class='num'>#2</td><td class='muted note'></td></tr><tr><td><b>tool tracking RMS</b></td><td>mm ×1000</td><td><code>ErrorStat()</code></td><td><code>tool/target/tool/state</code></td><td>pool</td><td>live</td><td class='num'>#3</td><td class='muted note'></td></tr><tr><td><b>tool worst</b></td><td>mm ×1000</td><td><code>ErrorStat(statistic=&#x27;max_abs&#x27;)</code></td><td><code>tool/target/tool/state</code></td><td>max</td><td>live</td><td class='num'>#3</td><td class='muted note'></td></tr></tbody></table></div>
+  <h3>Gates <span class="muted">· objectives outside compute()</span></h3>
+  <p class="section-lede">Round 8's three verdicts per (station, rung) cell. Each objective names its owner; a new
+  target recomputes nothing.</p>
+  <div class="scroll"><table><thead><tr><th>gate</th><th>objective</th><th>on</th><th>owner</th></tr></thead>
+  <tbody><tr><td><b>tracks</b></td><td>servo/tracking RMS &lt;= 0.5 deg</td><td>value</td><td class='muted'>agent (pendulum_goal)</td></tr><tr><td><b>tracks</b></td><td>servo/tracking peak &lt;= 1.5 deg</td><td>value</td><td class='muted'>agent (pendulum_goal)</td></tr><tr><td><b>tracks</b></td><td>servo/limiter share &lt;= 2 %</td><td>value</td><td class='muted'>agent (pendulum_goal)</td></tr><tr><td><b>tracks</b></td><td>faulted runs &lt;= 0</td><td>value</td><td class='muted'>agent (pendulum_goal)</td></tr><tr><td><b>tip stop (median)</b></td><td>tip stop error &lt;= 1 mm</td><td>value</td><td class='muted'>Zach 2026-11-11 (the scorecard&#x27;s median)</td></tr><tr><td><b>tip stop (median)</b></td><td>tip settle &lt;= 0.3 s</td><td>value</td><td class='muted'>agent (pendulum_goal)</td></tr><tr><td><b>tip stop (every stop)</b></td><td>100% of tip stop error &lt;= 1 mm</td><td>items</td><td class='muted'>proposed: Zach 2026-11-11 on every stop</td></tr></tbody></table></div>
+</section>
+
+<section id="gallery">
+  <h2>Gallery</h2>
+  <p class="section-lede">Three arms, each scored by the builder for real. v1: the errors are what they are; the
+  point is to see where each arm stands. The 1-DOF pendulum and the five-bar are real recordings; the UR5e is a
+  simulation, labelled as one.</p>
+  <nav class="parts"><a href="#pendulum">1-DOF pendulum · real</a><a href="#fivebar">Five-bar arm · real + sim</a>
+  <a href="#ur5e">UR5e · simulated</a></nav>
+  
+<div class="example" id="pendulum">
+  <header><h3>1-DOF pendulum · six stations</h3><span class="chip real">REAL · round 8</span></header>
+  <p>The 1-DOF test rack: six integrated servos, each swinging a lever, each played on a six-rung speed ladder (five repeats plus two held-out plays per rung). Recordings stay private; the page shows the code that scored them, its output, and the summary as data.</p>
+  <div class="tiles"><div class='tile'><b>252</b><span>real plays scored</span></div><div class='tile'><b>6 × 6</b><span>stations × rungs</span></div><div class='tile'><b>5</b><span>stations with every stop ≤ 1 mm up to rung 1.0</span></div><div class='tile'><b>1.32 mm</b><span>CAN 11&#x27;s worst stop at the tip</span></div></div>
+  <div class="figs"><figure><img src='img/pendulum-can11-tip-stops.png' alt='Every stop at CAN 11&#x27;s tip by rung, against 1 mm: the tail the median hides.'><figcaption>Every stop at CAN 11's tip by rung, against 1 mm: the tail the median hides.</figcaption></figure><figure><img src='img/pendulum-tracking-by-rung.png' alt='Tracking RMS by rung for every station, against the 0.5° gate.'><figcaption>Tracking RMS by rung for every station, against the 0.5° gate.</figcaption></figure></div>
+  <details open><summary>The code, as it ran (1.5 s)</summary>
+    <h4 class='cell-title'>1. six stations, one catalog entry</h4><p class='cell-caption'>Round 8 of the 1-DOF test rack: six pendulum stations, six speed rungs each, five repeats plus two held-out plays per rung. Each station is the same part type with its own lever.</p><div class='notebook'><pre class='src'><span class="kn">from</span><span class="w"> </span><span class="nn">robot_metrics</span><span class="w"> </span><span class="kn">import</span> <span class="n">View</span><span class="p">,</span> <span class="n">catalog</span><span class="p">,</span> <span class="n">highest_passing</span><span class="p">,</span> <span class="n">summarize</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">robot_metrics.datasets</span><span class="w"> </span><span class="kn">import</span> <span class="n">onedof_round8</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">robot_metrics.views</span><span class="w"> </span><span class="kn">import</span> <span class="n">plot</span>
+
+<span class="n">stations</span> <span class="o">=</span> <span class="n">onedof_round8</span><span class="o">.</span><span class="n">stations</span><span class="p">()</span>
+<span class="n">stations</span><span class="p">[</span><span class="s2">"can11"</span><span class="p">]</span></pre><pre class='out'>{&#x27;tip_length_m&#x27;: 0.339, &#x27;omega_max_rad_s&#x27;: 5.0}</pre><pre class='src gap'><span class="n">runs</span> <span class="o">=</span> <span class="n">onedof_round8</span><span class="o">.</span><span class="n">real_runs</span><span class="p">()</span>
+<span class="nb">len</span><span class="p">(</span><span class="n">runs</span><span class="p">)</span></pre><pre class='out'>252</pre><pre class='src gap'><span class="n">gates</span> <span class="o">=</span> <span class="n">catalog</span><span class="o">.</span><span class="n">pendulum_gates</span><span class="p">()</span>
+<span class="nb">list</span><span class="p">(</span><span class="n">gates</span><span class="p">)</span></pre><pre class='out'>[&#x27;tracks&#x27;, &#x27;tip stop (median)&#x27;, &#x27;tip stop (every stop)&#x27;]</pre></div><h4 class='cell-title'>2. every station by rung, every gate</h4><p class='cell-caption'>summarize() folds each run, merges each (station, rung) stratum and reads every alias by its own across rule. The gates judge each stratum; a station reaches the highest rung with every rung below it passing.</p><div class='notebook'><pre class='src'><span class="n">strata_by_station</span> <span class="o">=</span> <span class="p">{}</span>
+<span class="k">for</span> <span class="n">station</span><span class="p">,</span> <span class="n">facts</span> <span class="ow">in</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">stations</span><span class="o">.</span><span class="n">items</span><span class="p">()):</span>
+    <span class="n">arm</span> <span class="o">=</span> <span class="n">catalog</span><span class="o">.</span><span class="n">pendulum_arm</span><span class="p">(</span><span class="n">facts</span><span class="p">[</span><span class="s2">"tip_length_m"</span><span class="p">])</span><span class="o">.</span><span class="n">collection</span><span class="p">()</span>
+    <span class="n">station_runs</span> <span class="o">=</span> <span class="p">[</span><span class="n">run</span> <span class="k">for</span> <span class="n">run</span> <span class="ow">in</span> <span class="n">runs</span> <span class="k">if</span> <span class="n">run</span><span class="o">.</span><span class="n">labels</span><span class="p">[</span><span class="s2">"station"</span><span class="p">]</span> <span class="o">==</span> <span class="n">station</span><span class="p">]</span>
+    <span class="n">strata_by_station</span><span class="p">[</span><span class="n">station</span><span class="p">]</span> <span class="o">=</span> <span class="n">summarize</span><span class="p">(</span><span class="n">arm</span><span class="p">,</span> <span class="n">station_runs</span><span class="p">,</span> <span class="n">by</span><span class="o">=</span><span class="p">(</span><span class="s2">"station"</span><span class="p">,</span> <span class="s2">"rung"</span><span class="p">))</span>
+<span class="nb">len</span><span class="p">(</span><span class="n">strata_by_station</span><span class="p">)</span></pre><pre class='out'>6</pre><pre class='src gap'><span class="n">passed_by_gate</span> <span class="o">=</span> <span class="p">{</span><span class="n">name</span><span class="p">:</span> <span class="p">{}</span> <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">gates</span><span class="p">}</span>
+<span class="k">for</span> <span class="n">strata</span> <span class="ow">in</span> <span class="n">strata_by_station</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
+    <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">stratum</span> <span class="ow">in</span> <span class="n">strata</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">gate</span> <span class="ow">in</span> <span class="n">gates</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">passed_by_gate</span><span class="p">[</span><span class="n">name</span><span class="p">][</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">gate</span><span class="o">.</span><span class="n">judge</span><span class="p">(</span><span class="n">stratum</span><span class="p">)</span><span class="o">.</span><span class="n">verdict</span> <span class="o">==</span> <span class="s2">"pass"</span>
+
+<span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">passed</span> <span class="ow">in</span> <span class="n">passed_by_gate</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+    <span class="n">reached</span> <span class="o">=</span> <span class="n">highest_passing</span><span class="p">(</span><span class="n">passed</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">name</span><span class="si">:</span><span class="s2">&lt;22</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">reached</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span></pre><pre class='out'>tracks                 {&#x27;can1&#x27;: 0.9, &#x27;can11&#x27;: 1.0, &#x27;can12&#x27;: 0.9, &#x27;can13&#x27;: 0.9, &#x27;can14&#x27;: 0.9, &#x27;can15&#x27;: 0.9}
+tip stop (median)      {&#x27;can1&#x27;: 1.0, &#x27;can11&#x27;: 1.0, &#x27;can12&#x27;: 1.0, &#x27;can13&#x27;: 1.0, &#x27;can14&#x27;: 1.0, &#x27;can15&#x27;: 1.0}
+tip stop (every stop)  {&#x27;can1&#x27;: 1.0, &#x27;can11&#x27;: 0.2, &#x27;can12&#x27;: 1.0, &#x27;can13&#x27;: 1.0, &#x27;can14&#x27;: 1.0, &#x27;can15&#x27;: 1.0}</pre></div><h4 class='cell-title'>3. CAN 11, rung by rung</h4><p class='cell-caption'>The long-lever station (339 mm to the tip). The every-stop gate reads the tail the median hides.</p><div class='notebook'><pre class='src'><span class="n">can11</span> <span class="o">=</span> <span class="n">strata_by_station</span><span class="p">[</span><span class="s2">"can11"</span><span class="p">]</span>
+
+<span class="k">for</span> <span class="p">(</span><span class="n">station</span><span class="p">,</span> <span class="n">rung</span><span class="p">),</span> <span class="n">stratum</span> <span class="ow">in</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">can11</span><span class="o">.</span><span class="n">items</span><span class="p">()):</span>
+    <span class="n">tracking_deg</span> <span class="o">=</span> <span class="n">stratum</span><span class="o">.</span><span class="n">values</span><span class="p">[</span><span class="s2">"servo/tracking RMS"</span><span class="p">]</span>
+    <span class="n">tail</span> <span class="o">=</span> <span class="n">stratum</span><span class="o">.</span><span class="n">tails</span><span class="p">[</span><span class="s2">"tip stop error"</span><span class="p">]</span>
+    <span class="n">tracking_text</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"tracking </span><span class="si">{</span><span class="n">tracking_deg</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">°"</span>
+    <span class="n">middle_text</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"stops median </span><span class="si">{</span><span class="n">tail</span><span class="o">.</span><span class="n">median</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2"> · p95 </span><span class="si">{</span><span class="n">tail</span><span class="o">.</span><span class="n">p95</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">"</span>
+    <span class="n">worst_text</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"worst </span><span class="si">{</span><span class="n">tail</span><span class="o">.</span><span class="n">worst</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2"> mm (n=</span><span class="si">{</span><span class="n">tail</span><span class="o">.</span><span class="n">n</span><span class="si">}</span><span class="s2">)"</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"rung </span><span class="si">{</span><span class="n">rung</span><span class="si">:</span><span class="s2">&lt;3g</span><span class="si">}</span><span class="s2"> | </span><span class="si">{</span><span class="n">tracking_text</span><span class="si">}</span><span class="s2"> | </span><span class="si">{</span><span class="n">middle_text</span><span class="si">}</span><span class="s2"> · </span><span class="si">{</span><span class="n">worst_text</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span></pre><pre class='out'>rung 0.2 | tracking 0.095° | stops median 0.291 · p95 0.546 · worst 0.610 mm (n=14)
+rung 0.4 | tracking 0.079° | stops median 0.163 · p95 1.104 · worst 1.293 mm (n=14)
+rung 0.6 | tracking 0.061° | stops median 0.220 · p95 0.556 · worst 0.576 mm (n=14)
+rung 0.8 | tracking 0.099° | stops median 0.250 · p95 0.642 · worst 0.713 mm (n=14)
+rung 0.9 | tracking 0.135° | stops median 0.374 · p95 0.881 · worst 1.143 mm (n=14)
+rung 1   | tracking 0.163° | stops median 0.558 · p95 1.129 · worst 1.317 mm (n=14)</pre></div><h4 class='cell-title'>4. views</h4><p class='cell-caption'>One View per picture, drawn by the stock plot(): every stop at the tip by rung against Zach&#x27;s 1 mm, and every station&#x27;s tracking against the agent&#x27;s 0.5° gate.</p><div class='notebook'><pre class='src'><span class="n">can11_arm</span> <span class="o">=</span> <span class="n">catalog</span><span class="o">.</span><span class="n">pendulum_arm</span><span class="p">(</span><span class="n">stations</span><span class="p">[</span><span class="s2">"can11"</span><span class="p">][</span><span class="s2">"tip_length_m"</span><span class="p">])</span><span class="o">.</span><span class="n">collection</span><span class="p">()</span>
+
+<span class="n">states_by_rung</span> <span class="o">=</span> <span class="p">{}</span>
+<span class="k">for</span> <span class="p">(</span><span class="n">station</span><span class="p">,</span> <span class="n">rung</span><span class="p">),</span> <span class="n">stratum</span> <span class="ow">in</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">can11</span><span class="o">.</span><span class="n">items</span><span class="p">()):</span>
+    <span class="n">states_by_rung</span><span class="p">[</span><span class="sa">f</span><span class="s2">"rung </span><span class="si">{</span><span class="n">rung</span><span class="si">:</span><span class="s2">g</span><span class="si">}</span><span class="s2">"</span><span class="p">]</span> <span class="o">=</span> <span class="n">stratum</span><span class="o">.</span><span class="n">merged</span>
+
+<span class="n">stops_view</span> <span class="o">=</span> <span class="n">can11_arm</span><span class="o">.</span><span class="n">view</span><span class="p">(</span>
+    <span class="s2">"tip stop error"</span><span class="p">,</span>
+    <span class="n">states_by_rung</span><span class="p">,</span>
+    <span class="n">title</span><span class="o">=</span><span class="s2">"CAN 11 · every stop at the tip, by rung (round 8, real)"</span><span class="p">,</span>
+    <span class="n">target</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
+    <span class="n">target_label</span><span class="o">=</span><span class="s2">"1 mm (Zach)"</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="n">figure</span><span class="p">,</span> <span class="n">axes</span> <span class="o">=</span> <span class="n">plot</span><span class="p">(</span><span class="n">stops_view</span><span class="p">,</span> <span class="n">path</span><span class="o">=</span><span class="n">MEDIA</span> <span class="o">/</span> <span class="s2">"pendulum-can11-tip-stops.png"</span><span class="p">)</span>
+
+<span class="n">rungs</span><span class="p">,</span> <span class="n">tracking_values</span><span class="p">,</span> <span class="n">station_names</span> <span class="o">=</span> <span class="p">[],</span> <span class="p">[],</span> <span class="p">[]</span>
+<span class="k">for</span> <span class="n">station</span><span class="p">,</span> <span class="n">strata</span> <span class="ow">in</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">strata_by_station</span><span class="o">.</span><span class="n">items</span><span class="p">()):</span>
+    <span class="k">for</span> <span class="p">(</span><span class="n">_</span><span class="p">,</span> <span class="n">rung</span><span class="p">),</span> <span class="n">stratum</span> <span class="ow">in</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">strata</span><span class="o">.</span><span class="n">items</span><span class="p">()):</span>
+        <span class="n">rungs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">rung</span><span class="p">)</span>
+        <span class="n">tracking_values</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">stratum</span><span class="o">.</span><span class="n">values</span><span class="p">[</span><span class="s2">"servo/tracking RMS"</span><span class="p">])</span>
+        <span class="n">station_names</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">station</span><span class="p">)</span>
+
+<span class="n">tracking_view</span> <span class="o">=</span> <span class="n">View</span><span class="p">(</span>
+    <span class="n">title</span><span class="o">=</span><span class="s2">"Tracking RMS by rung, every station (median of each rung's 7 plays)"</span><span class="p">,</span>
+    <span class="n">unit</span><span class="o">=</span><span class="s2">"deg"</span><span class="p">,</span>
+    <span class="n">hint</span><span class="o">=</span><span class="s2">"kpi_trend"</span><span class="p">,</span>
+    <span class="n">x</span><span class="o">=</span><span class="n">rungs</span><span class="p">,</span>
+    <span class="n">y</span><span class="o">=</span><span class="n">tracking_values</span><span class="p">,</span>
+    <span class="n">group</span><span class="o">=</span><span class="n">station_names</span><span class="p">,</span>
+    <span class="n">target</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span>
+    <span class="n">target_label</span><span class="o">=</span><span class="s2">"0.5° (agent)"</span><span class="p">,</span>
+    <span class="n">x_label</span><span class="o">=</span><span class="s2">"rung (share of the station's top speed)"</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="n">figure</span><span class="p">,</span> <span class="n">axes</span> <span class="o">=</span> <span class="n">plot</span><span class="p">(</span><span class="n">tracking_view</span><span class="p">,</span> <span class="n">path</span><span class="o">=</span><span class="n">MEDIA</span> <span class="o">/</span> <span class="s2">"pendulum-tracking-by-rung.png"</span><span class="p">)</span></pre></div></details>
+  <p class="muted">Numbers as data: <a href="data/pendulum-round8.json">data/pendulum-round8.json</a></p>
+</div>
+<div class="example" id="fivebar">
+  <header><h3>Five-bar arm · real and its sim twin</h3><span class="chip real">REAL + SIM · 2026-11-10</span></header>
+  <p>The bam_fb five-bar (two motors, a closed chain) on a five-rung tool-speed ladder, played on the real arm and on its sim twin. The catalog's rigid chain scores both with the same identities.</p>
+  <div class="tiles"><div class='tile'><b>5</b><span>real rungs</span></div><div class='tile'><b>5</b><span>sim rungs</span></div><div class='tile'><b>5.0 mm</b><span>best real tool tracking RMS</span></div><div class='tile'><b>33.1 mm</b><span>worst real tool error</span></div></div>
+  <div class="figs"><figure><img src='img/fivebar-tool-rms-by-speed.png' alt='Tool tracking RMS against tool speed, real and sim.'><figcaption>Tool tracking RMS against tool speed, real and sim.</figcaption></figure><figure><img src='img/fivebar-tool-path.png' alt='One rung&#x27;s tool path in the plane, commanded and measured.'><figcaption>One rung's tool path in the plane, commanded and measured.</figcaption></figure></div>
+  <details open><summary>The code, as it ran (1.5 s)</summary>
+    <h4 class='cell-title'>1. a rigid chain from the catalog</h4><p class='cell-caption'>The bam_fb five-bar&#x27;s speed ladder of 2026-11-10: the same five rungs played on the real arm and on its sim twin. Its metrics are a rigid chain: each motor&#x27;s RMS and the tool&#x27;s error.</p><div class='notebook'><pre class='src'><span class="kn">from</span><span class="w"> </span><span class="nn">robot_metrics</span><span class="w"> </span><span class="kn">import</span> <span class="n">View</span><span class="p">,</span> <span class="n">catalog</span><span class="p">,</span> <span class="n">summarize</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">robot_metrics.datasets</span><span class="w"> </span><span class="kn">import</span> <span class="n">fivebar_ladder</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">robot_metrics.views</span><span class="w"> </span><span class="kn">import</span> <span class="n">plot</span>
+
+<span class="n">real_runs</span> <span class="o">=</span> <span class="n">fivebar_ladder</span><span class="o">.</span><span class="n">runs</span><span class="p">(</span><span class="s2">"real"</span><span class="p">)</span>
+<span class="n">sim_runs</span> <span class="o">=</span> <span class="n">fivebar_ladder</span><span class="o">.</span><span class="n">runs</span><span class="p">(</span><span class="s2">"sim"</span><span class="p">)</span>
+<span class="n">real_runs</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span></pre><pre class='out wrap'>Run(real station=bam_fb five-bar rung=vertical.0.10mps.full_ff · target 12010, state 12010, tool/target 12010, tool/state 12010)</pre><pre class='src gap'><span class="n">chain</span> <span class="o">=</span> <span class="n">catalog</span><span class="o">.</span><span class="n">rigid_chain</span><span class="p">((</span><span class="s2">"j2"</span><span class="p">,</span> <span class="s2">"c1"</span><span class="p">))</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">chain</span><span class="o">.</span><span class="n">table</span><span class="p">())</span></pre><pre class='out'>rigid_body_chain.metrics: 4 aliases over 3 states
+  j2/tracking RMS    [deg]  ErrorStat(statistic=&#x27;rms&#x27;, rows=&#x27;all&#x27;, field=&#x27;positions&#x27;, joint=0)
+  c1/tracking RMS    [deg]  ErrorStat(statistic=&#x27;rms&#x27;, rows=&#x27;all&#x27;, field=&#x27;positions&#x27;, joint=1)
+  tool tracking RMS  [ mm]  ErrorStat(statistic=&#x27;rms&#x27;, rows=&#x27;all&#x27;, field=&#x27;positions&#x27;, joint=0)
+  tool worst         [ mm]  ErrorStat(statistic=&#x27;max_abs&#x27;, rows=&#x27;all&#x27;, field=&#x27;positions&#x27;, joint=0)</pre></div><h4 class='cell-title'>2. real vs sim, rung by rung</h4><p class='cell-caption'>One collection over both sources: the same identities, so the numbers compare.</p><div class='notebook'><pre class='src'><span class="n">collection</span> <span class="o">=</span> <span class="n">chain</span><span class="o">.</span><span class="n">collection</span><span class="p">()</span>
+<span class="n">real</span> <span class="o">=</span> <span class="n">summarize</span><span class="p">(</span><span class="n">collection</span><span class="p">,</span> <span class="n">real_runs</span><span class="p">,</span> <span class="n">by</span><span class="o">=</span><span class="p">(</span><span class="s2">"rung"</span><span class="p">,))</span>
+<span class="n">sim</span> <span class="o">=</span> <span class="n">summarize</span><span class="p">(</span><span class="n">collection</span><span class="p">,</span> <span class="n">sim_runs</span><span class="p">,</span> <span class="n">by</span><span class="o">=</span><span class="p">(</span><span class="s2">"rung"</span><span class="p">,))</span>
+
+<span class="k">for</span> <span class="p">(</span><span class="n">rung</span><span class="p">,),</span> <span class="n">stratum</span> <span class="ow">in</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">real</span><span class="o">.</span><span class="n">items</span><span class="p">()):</span>
+    <span class="n">real_mm</span> <span class="o">=</span> <span class="n">stratum</span><span class="o">.</span><span class="n">values</span><span class="p">[</span><span class="s2">"tool tracking RMS"</span><span class="p">]</span>
+    <span class="n">sim_mm</span> <span class="o">=</span> <span class="n">sim</span><span class="p">[(</span><span class="n">rung</span><span class="p">,)]</span><span class="o">.</span><span class="n">values</span><span class="p">[</span><span class="s2">"tool tracking RMS"</span><span class="p">]</span>
+    <span class="n">worst_mm</span> <span class="o">=</span> <span class="n">stratum</span><span class="o">.</span><span class="n">values</span><span class="p">[</span><span class="s2">"tool worst"</span><span class="p">]</span>
+    <span class="n">tool_text</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"tool RMS real </span><span class="si">{</span><span class="n">real_mm</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2"> · sim </span><span class="si">{</span><span class="n">sim_mm</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2"> mm"</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">rung</span><span class="si">:</span><span class="s2">&lt;28</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">tool_text</span><span class="si">}</span><span class="s2"> · worst real </span><span class="si">{</span><span class="n">worst_mm</span><span class="si">:</span><span class="s2">.1f</span><span class="si">}</span><span class="s2"> mm"</span><span class="p">)</span></pre><pre class='out'>vertical.0.10mps.full_ff     tool RMS real 5.04 · sim 3.96 mm · worst real 24.8 mm
+vertical.0.10mps.gravity_ff  tool RMS real 5.14 · sim 4.83 mm · worst real 23.8 mm
+vertical.0.20mps.full_ff     tool RMS real 5.29 · sim 4.07 mm · worst real 26.2 mm
+vertical.0.20mps.gravity_ff  tool RMS real 6.80 · sim 6.47 mm · worst real 33.1 mm
+vertical.0.35mps.full_ff     tool RMS real 5.97 · sim 4.24 mm · worst real 22.9 mm</pre></div><h4 class='cell-title'>3. views</h4><p class='cell-caption'>Tool tracking RMS against speed, real and sim per feed-forward mode; and one rung&#x27;s tool path in the plane, commanded and measured (every 20th sample).</p><div class='notebook'><pre class='src'><span class="n">labels_by_rung</span> <span class="o">=</span> <span class="p">{}</span>
+<span class="k">for</span> <span class="n">run</span> <span class="ow">in</span> <span class="n">real_runs</span><span class="p">:</span>
+    <span class="n">labels_by_rung</span><span class="p">[</span><span class="n">run</span><span class="o">.</span><span class="n">labels</span><span class="p">[</span><span class="s2">"rung"</span><span class="p">]]</span> <span class="o">=</span> <span class="n">run</span><span class="o">.</span><span class="n">labels</span>
+
+<span class="n">speeds</span><span class="p">,</span> <span class="n">tool_values</span><span class="p">,</span> <span class="n">series</span> <span class="o">=</span> <span class="p">[],</span> <span class="p">[],</span> <span class="p">[]</span>
+<span class="k">for</span> <span class="n">source</span><span class="p">,</span> <span class="n">strata</span> <span class="ow">in</span> <span class="p">((</span><span class="s2">"real"</span><span class="p">,</span> <span class="n">real</span><span class="p">),</span> <span class="p">(</span><span class="s2">"sim"</span><span class="p">,</span> <span class="n">sim</span><span class="p">)):</span>
+    <span class="k">for</span> <span class="p">(</span><span class="n">rung</span><span class="p">,),</span> <span class="n">stratum</span> <span class="ow">in</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">strata</span><span class="o">.</span><span class="n">items</span><span class="p">()):</span>
+        <span class="n">rung_labels</span> <span class="o">=</span> <span class="n">labels_by_rung</span><span class="p">[</span><span class="n">rung</span><span class="p">]</span>
+        <span class="n">speeds</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">rung_labels</span><span class="p">[</span><span class="s2">"speed_m_s"</span><span class="p">])</span>
+        <span class="n">tool_values</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">stratum</span><span class="o">.</span><span class="n">values</span><span class="p">[</span><span class="s2">"tool tracking RMS"</span><span class="p">])</span>
+        <span class="n">series</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">source</span><span class="si">}</span><span class="s2"> · </span><span class="si">{</span><span class="n">rung_labels</span><span class="p">[</span><span class="s1">'ff_mode'</span><span class="p">]</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+
+<span class="n">speed_view</span> <span class="o">=</span> <span class="n">View</span><span class="p">(</span>
+    <span class="n">title</span><span class="o">=</span><span class="s2">"Five-bar tool tracking RMS by speed (2026-11-10 ladder)"</span><span class="p">,</span>
+    <span class="n">unit</span><span class="o">=</span><span class="s2">"mm"</span><span class="p">,</span>
+    <span class="n">hint</span><span class="o">=</span><span class="s2">"kpi_trend"</span><span class="p">,</span>
+    <span class="n">x</span><span class="o">=</span><span class="n">speeds</span><span class="p">,</span>
+    <span class="n">y</span><span class="o">=</span><span class="n">tool_values</span><span class="p">,</span>
+    <span class="n">group</span><span class="o">=</span><span class="n">series</span><span class="p">,</span>
+    <span class="n">x_label</span><span class="o">=</span><span class="s2">"tool speed (m/s)"</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="n">figure</span><span class="p">,</span> <span class="n">axes</span> <span class="o">=</span> <span class="n">plot</span><span class="p">(</span><span class="n">speed_view</span><span class="p">,</span> <span class="n">path</span><span class="o">=</span><span class="n">MEDIA</span> <span class="o">/</span> <span class="s2">"fivebar-tool-rms-by-speed.png"</span><span class="p">)</span>
+
+<span class="n">run</span> <span class="o">=</span> <span class="n">real_runs</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span>
+<span class="n">commanded_xy</span> <span class="o">=</span> <span class="n">run</span><span class="o">.</span><span class="n">streams</span><span class="p">[</span><span class="s2">"tool/target"</span><span class="p">]</span><span class="o">.</span><span class="n">positions</span><span class="p">[::</span><span class="mi">20</span><span class="p">,</span> <span class="p">:</span><span class="mi">2</span><span class="p">]</span> <span class="o">*</span> <span class="mf">1e3</span>
+<span class="n">measured_xy</span> <span class="o">=</span> <span class="n">run</span><span class="o">.</span><span class="n">streams</span><span class="p">[</span><span class="s2">"tool/state"</span><span class="p">]</span><span class="o">.</span><span class="n">positions</span><span class="p">[::</span><span class="mi">20</span><span class="p">,</span> <span class="p">:</span><span class="mi">2</span><span class="p">]</span> <span class="o">*</span> <span class="mf">1e3</span>
+<span class="n">samples</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">commanded_xy</span><span class="p">)</span>
+
+<span class="n">path_view</span> <span class="o">=</span> <span class="n">View</span><span class="p">(</span>
+    <span class="n">title</span><span class="o">=</span><span class="sa">f</span><span class="s2">"Tool path in the plane, </span><span class="si">{</span><span class="n">run</span><span class="o">.</span><span class="n">labels</span><span class="p">[</span><span class="s1">'rung'</span><span class="p">]</span><span class="si">}</span><span class="s2"> (real)"</span><span class="p">,</span>
+    <span class="n">unit</span><span class="o">=</span><span class="s2">"mm"</span><span class="p">,</span>
+    <span class="n">hint</span><span class="o">=</span><span class="s2">"path_overlay"</span><span class="p">,</span>
+    <span class="n">x</span><span class="o">=</span><span class="p">[</span><span class="o">*</span><span class="n">commanded_xy</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">],</span> <span class="o">*</span><span class="n">measured_xy</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">]],</span>
+    <span class="n">y</span><span class="o">=</span><span class="p">[</span><span class="o">*</span><span class="n">commanded_xy</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">],</span> <span class="o">*</span><span class="n">measured_xy</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">]],</span>
+    <span class="n">group</span><span class="o">=</span><span class="p">[</span><span class="s2">"commanded"</span><span class="p">]</span> <span class="o">*</span> <span class="n">samples</span> <span class="o">+</span> <span class="p">[</span><span class="s2">"measured"</span><span class="p">]</span> <span class="o">*</span> <span class="n">samples</span><span class="p">,</span>
+    <span class="n">x_label</span><span class="o">=</span><span class="s2">"x (mm)"</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="n">figure</span><span class="p">,</span> <span class="n">axes</span> <span class="o">=</span> <span class="n">plot</span><span class="p">(</span><span class="n">path_view</span><span class="p">)</span>
+<span class="n">axes</span><span class="o">.</span><span class="n">set_aspect</span><span class="p">(</span><span class="s2">"equal"</span><span class="p">,</span> <span class="n">adjustable</span><span class="o">=</span><span class="s2">"datalim"</span><span class="p">)</span>
+<span class="n">figure</span><span class="o">.</span><span class="n">savefig</span><span class="p">(</span><span class="n">MEDIA</span> <span class="o">/</span> <span class="s2">"fivebar-tool-path.png"</span><span class="p">)</span></pre></div></details>
+  <p class="muted">Numbers as data: <a href="data/fivebar-ladder.json">data/fivebar-ladder.json</a></p>
+</div>
+<div class="example" id="ur5e">
+  <header><h3>UR5e · six joints, simulated</h3><span class="chip sim">SIMULATED · MuJoCo</span></header>
+  <p>No real UR5e run exists: this arm is MuJoCo Menagerie's UR5e model under its own PD position servos (<code>website/ur5e_sim.py</code>), following a joint-space pick-and-place at three speeds, as shipped and with model feed-forward. It shows a six-joint arm going in as plain robot_msgs streams.</p>
+  <div class="tiles"><div class='tile'><b>6</b><span>simulated runs</span></div><div class='tile'><b>67 mm</b><span>tool RMS, PD as shipped, full speed</span></div><div class='tile'><b>1.07 mm</b><span>tool RMS with feed-forward, full speed</span></div><div class='tile'><b>1 of 6</b><span>cells with the worst tool error ≤ 1 mm</span></div></div>
+  <div class="figs"><figure><img src='img/ur5e-tool-rms-by-speed.png' alt='Tool tracking RMS by speed, both controllers (log scale). SIMULATED.'><figcaption>Tool tracking RMS by speed, both controllers (log scale). SIMULATED.</figcaption></figure><figure><img src='img/ur5e-shoulder-lift-stops.png' alt='Every stop of the shoulder lift joint at full speed. SIMULATED.'><figcaption>Every stop of the shoulder lift joint at full speed. SIMULATED.</figcaption></figure></div>
+  <details open><summary>The code, as it ran (1.2 s)</summary>
+    <h4 class='cell-title'>1. what goes in: robot_msgs streams</h4><p class='cell-caption'>SIMULATED. MuJoCo Menagerie&#x27;s UR5e follows a joint-space pick-and-place under its own PD position servos. The arrays become robot_msgs streams, and the streams a Run.</p><div class='notebook'><pre class='src'><span class="kn">import</span><span class="w"> </span><span class="nn">ur5e_sim</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">robot_msgs.trajectory</span><span class="w"> </span><span class="kn">import</span> <span class="n">JointTrajectory</span><span class="p">,</span> <span class="n">PoseTrajectory</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">robot_metrics</span><span class="w"> </span><span class="kn">import</span> <span class="n">DEGREES</span><span class="p">,</span> <span class="n">Alias</span><span class="p">,</span> <span class="n">Collection</span><span class="p">,</span> <span class="n">Objective</span><span class="p">,</span> <span class="n">Run</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">robot_metrics</span><span class="w"> </span><span class="kn">import</span> <span class="n">StopStat</span><span class="p">,</span> <span class="n">TimeOffset</span><span class="p">,</span> <span class="n">View</span><span class="p">,</span> <span class="n">catalog</span><span class="p">,</span> <span class="n">summarize</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">robot_metrics.views</span><span class="w"> </span><span class="kn">import</span> <span class="n">plot</span>
+
+<span class="n">sim</span> <span class="o">=</span> <span class="n">ur5e_sim</span><span class="o">.</span><span class="n">simulate</span><span class="p">(</span><span class="n">speed</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">controller</span><span class="o">=</span><span class="s2">"pd"</span><span class="p">)</span>     <span class="c1"># numpy arrays from MuJoCo</span>
+<span class="n">sim</span><span class="o">.</span><span class="n">t</span><span class="o">.</span><span class="n">shape</span></pre><pre class='out'>(980,)</pre><pre class='src'><span class="n">sim</span><span class="o">.</span><span class="n">target_q</span><span class="o">.</span><span class="n">shape</span></pre><pre class='out'>(980, 6)</pre><pre class='src gap'><span class="n">target</span> <span class="o">=</span> <span class="n">JointTrajectory</span><span class="p">(</span>
+    <span class="n">t</span><span class="o">=</span><span class="n">sim</span><span class="o">.</span><span class="n">t</span><span class="p">,</span> <span class="n">joint_names</span><span class="o">=</span><span class="n">ur5e_sim</span><span class="o">.</span><span class="n">JOINTS</span><span class="p">,</span> <span class="n">positions</span><span class="o">=</span><span class="n">sim</span><span class="o">.</span><span class="n">target_q</span><span class="p">,</span> <span class="n">velocities</span><span class="o">=</span><span class="n">sim</span><span class="o">.</span><span class="n">target_qd</span>
+<span class="p">)</span>
+<span class="n">state</span> <span class="o">=</span> <span class="n">JointTrajectory</span><span class="p">(</span>
+    <span class="n">t</span><span class="o">=</span><span class="n">sim</span><span class="o">.</span><span class="n">t</span><span class="p">,</span> <span class="n">joint_names</span><span class="o">=</span><span class="n">ur5e_sim</span><span class="o">.</span><span class="n">JOINTS</span><span class="p">,</span> <span class="n">positions</span><span class="o">=</span><span class="n">sim</span><span class="o">.</span><span class="n">state_q</span><span class="p">,</span> <span class="n">velocities</span><span class="o">=</span><span class="n">sim</span><span class="o">.</span><span class="n">state_qd</span>
+<span class="p">)</span>
+<span class="n">flange</span> <span class="o">=</span> <span class="s2">"flange"</span>
+<span class="n">tool_target</span> <span class="o">=</span> <span class="n">PoseTrajectory</span><span class="o">.</span><span class="n">from_matrices</span><span class="p">(</span><span class="n">sim</span><span class="o">.</span><span class="n">t</span><span class="p">,</span> <span class="n">sim</span><span class="o">.</span><span class="n">target_flange</span><span class="p">,</span> <span class="n">child_frame_id</span><span class="o">=</span><span class="n">flange</span><span class="p">)</span>
+<span class="n">tool_state</span> <span class="o">=</span> <span class="n">PoseTrajectory</span><span class="o">.</span><span class="n">from_matrices</span><span class="p">(</span><span class="n">sim</span><span class="o">.</span><span class="n">t</span><span class="p">,</span> <span class="n">sim</span><span class="o">.</span><span class="n">state_flange</span><span class="p">,</span> <span class="n">child_frame_id</span><span class="o">=</span><span class="n">flange</span><span class="p">)</span>
+
+<span class="n">streams</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">"target"</span><span class="p">:</span> <span class="n">target</span><span class="p">,</span>
+    <span class="s2">"state"</span><span class="p">:</span> <span class="n">state</span><span class="p">,</span>
+    <span class="s2">"tool/target"</span><span class="p">:</span> <span class="n">tool_target</span><span class="p">,</span>
+    <span class="s2">"tool/state"</span><span class="p">:</span> <span class="n">tool_state</span><span class="p">,</span>
+<span class="p">}</span>
+<span class="n">labels</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"station"</span><span class="p">:</span> <span class="s2">"ur5e-sim"</span><span class="p">,</span> <span class="s2">"controller"</span><span class="p">:</span> <span class="s2">"pd"</span><span class="p">,</span> <span class="s2">"speed"</span><span class="p">:</span> <span class="mf">1.0</span><span class="p">}</span>
+<span class="n">run</span> <span class="o">=</span> <span class="n">Run</span><span class="p">(</span><span class="s2">"ur5e-sim:pd:x1"</span><span class="p">,</span> <span class="n">streams</span><span class="o">=</span><span class="n">streams</span><span class="p">,</span> <span class="n">labels</span><span class="o">=</span><span class="n">labels</span><span class="p">,</span> <span class="n">provenance</span><span class="o">=</span><span class="s2">"sim"</span><span class="p">)</span>
+<span class="n">run</span></pre><pre class='out'>Run(sim station=ur5e-sim · target 980, state 980, tool/target 980, tool/state 980)</pre></div><h4 class='cell-title'>2. a six-joint arm&#x27;s metrics</h4><p class='cell-caption'>The catalog&#x27;s rigid chain over six joints, plus each joint&#x27;s worst stop and the lag: new rows are configured stock metrics, never new functions.</p><div class='notebook'><pre class='src'><span class="n">chain</span> <span class="o">=</span> <span class="n">catalog</span><span class="o">.</span><span class="n">rigid_chain</span><span class="p">(</span><span class="n">ur5e_sim</span><span class="o">.</span><span class="n">JOINTS</span><span class="p">)</span>
+
+<span class="n">worst_stops</span> <span class="o">=</span> <span class="p">[]</span>
+<span class="k">for</span> <span class="n">index</span><span class="p">,</span> <span class="n">joint</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">ur5e_sim</span><span class="o">.</span><span class="n">JOINTS</span><span class="p">):</span>
+    <span class="n">worst_stop</span> <span class="o">=</span> <span class="n">StopStat</span><span class="p">(</span><span class="n">of</span><span class="o">=</span><span class="s2">"error"</span><span class="p">,</span> <span class="n">statistic</span><span class="o">=</span><span class="s2">"max"</span><span class="p">,</span> <span class="n">joint</span><span class="o">=</span><span class="n">index</span><span class="p">)</span>
+    <span class="n">worst_stops</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">Alias</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">joint</span><span class="si">}</span><span class="s2">/worst stop"</span><span class="p">,</span> <span class="n">worst_stop</span><span class="p">,</span> <span class="n">unit</span><span class="o">=</span><span class="s2">"deg"</span><span class="p">,</span> <span class="n">scale</span><span class="o">=</span><span class="n">DEGREES</span><span class="p">))</span>
+
+<span class="n">lag</span> <span class="o">=</span> <span class="n">Alias</span><span class="p">(</span><span class="s2">"lag"</span><span class="p">,</span> <span class="n">TimeOffset</span><span class="p">(),</span> <span class="n">unit</span><span class="o">=</span><span class="s2">"ms"</span><span class="p">,</span> <span class="n">scale</span><span class="o">=</span><span class="mf">1e3</span><span class="p">,</span> <span class="n">across</span><span class="o">=</span><span class="s2">"median"</span><span class="p">)</span>
+<span class="n">ur5e</span> <span class="o">=</span> <span class="n">Collection</span><span class="p">([</span><span class="o">*</span><span class="n">chain</span><span class="o">.</span><span class="n">collection</span><span class="p">()</span><span class="o">.</span><span class="n">aliases</span><span class="o">.</span><span class="n">values</span><span class="p">(),</span> <span class="o">*</span><span class="n">worst_stops</span><span class="p">,</span> <span class="n">lag</span><span class="p">])</span>
+<span class="n">ur5e</span></pre><pre class='out'>Collection(15 aliases over 14 states)</pre><pre class='src gap'><span class="n">values</span> <span class="o">=</span> <span class="n">ur5e</span><span class="o">.</span><span class="n">values</span><span class="p">(</span><span class="n">ur5e</span><span class="o">.</span><span class="n">fold</span><span class="p">(</span><span class="n">run</span><span class="p">))</span>
+<span class="n">values</span><span class="p">[</span><span class="s2">"tool tracking RMS"</span><span class="p">]</span></pre><pre class='out'>67.2876076265141</pre><pre class='src'><span class="n">values</span><span class="p">[</span><span class="s2">"shoulder_lift/worst stop"</span><span class="p">]</span></pre><pre class='out'>0.9348128369346066</pre><pre class='src'><span class="n">values</span><span class="p">[</span><span class="s2">"lag"</span><span class="p">]</span></pre><pre class='out'>159.99953182789665</pre></div><h4 class='cell-title'>3. two controllers, three speeds</h4><p class='cell-caption'>The same path at half, full and double speed, with the PD servos as shipped and with model feed-forward added. summarize() by controller and speed; a 1 mm gate on the worst tool error.</p><div class='notebook'><pre class='src'><span class="n">sweep</span> <span class="o">=</span> <span class="p">[]</span>
+<span class="k">for</span> <span class="n">controller</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"pd"</span><span class="p">,</span> <span class="s2">"pd+ff"</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">speed</span> <span class="ow">in</span> <span class="p">(</span><span class="mf">0.5</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mf">2.0</span><span class="p">):</span>
+        <span class="n">sweep</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">ur5e_sim</span><span class="o">.</span><span class="n">pick_and_place_run</span><span class="p">(</span><span class="n">speed</span><span class="p">,</span> <span class="n">controller</span><span class="p">))</span>
+<span class="nb">len</span><span class="p">(</span><span class="n">sweep</span><span class="p">)</span></pre><pre class='out'>6</pre><pre class='src gap'><span class="n">strata</span> <span class="o">=</span> <span class="n">summarize</span><span class="p">(</span><span class="n">ur5e</span><span class="p">,</span> <span class="n">sweep</span><span class="p">,</span> <span class="n">by</span><span class="o">=</span><span class="p">(</span><span class="s2">"controller"</span><span class="p">,</span> <span class="s2">"speed"</span><span class="p">))</span>
+<span class="n">tool_gate</span> <span class="o">=</span> <span class="n">Objective</span><span class="p">(</span><span class="s2">"tool worst"</span><span class="p">,</span> <span class="s2">"&lt;="</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="n">unit</span><span class="o">=</span><span class="s2">"mm"</span><span class="p">,</span> <span class="n">on</span><span class="o">=</span><span class="s2">"value"</span><span class="p">)</span>
+
+<span class="k">for</span> <span class="p">(</span><span class="n">controller</span><span class="p">,</span> <span class="n">speed</span><span class="p">),</span> <span class="n">stratum</span> <span class="ow">in</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">strata</span><span class="o">.</span><span class="n">items</span><span class="p">()):</span>
+    <span class="n">rms_mm</span> <span class="o">=</span> <span class="n">stratum</span><span class="o">.</span><span class="n">values</span><span class="p">[</span><span class="s2">"tool tracking RMS"</span><span class="p">]</span>
+    <span class="n">worst_mm</span> <span class="o">=</span> <span class="n">stratum</span><span class="o">.</span><span class="n">values</span><span class="p">[</span><span class="s2">"tool worst"</span><span class="p">]</span>
+    <span class="n">lag_ms</span> <span class="o">=</span> <span class="n">stratum</span><span class="o">.</span><span class="n">values</span><span class="p">[</span><span class="s2">"lag"</span><span class="p">]</span>
+    <span class="n">verdict</span> <span class="o">=</span> <span class="n">tool_gate</span><span class="o">.</span><span class="n">judge</span><span class="p">(</span><span class="n">stratum</span><span class="p">)</span><span class="o">.</span><span class="n">verdict</span>
+    <span class="n">tool_text</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"tool RMS </span><span class="si">{</span><span class="n">rms_mm</span><span class="si">:</span><span class="s2">6.2f</span><span class="si">}</span><span class="s2"> · worst </span><span class="si">{</span><span class="n">worst_mm</span><span class="si">:</span><span class="s2">6.2f</span><span class="si">}</span><span class="s2"> mm"</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">controller</span><span class="si">:</span><span class="s2">&lt;5</span><span class="si">}</span><span class="s2"> x</span><span class="si">{</span><span class="n">speed</span><span class="si">:</span><span class="s2">&lt;3g</span><span class="si">}</span><span class="s2"> | </span><span class="si">{</span><span class="n">tool_text</span><span class="si">}</span><span class="s2"> | lag </span><span class="si">{</span><span class="n">lag_ms</span><span class="si">:</span><span class="s2">5.1f</span><span class="si">}</span><span class="s2"> ms | </span><span class="si">{</span><span class="n">verdict</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span></pre><pre class='out'>pd    x0.5 | tool RMS  43.17 · worst  99.72 mm | lag 190.0 ms | fail
+pd    x1   | tool RMS  67.29 · worst 166.16 mm | lag 160.0 ms | fail
+pd    x2   | tool RMS  88.38 · worst 280.10 mm | lag 150.0 ms | fail
+pd+ff x0.5 | tool RMS   0.42 · worst   0.91 mm | lag   0.4 ms | pass
+pd+ff x1   | tool RMS   1.07 · worst   2.75 mm | lag   0.9 ms | fail
+pd+ff x2   | tool RMS   1.88 · worst   7.34 mm | lag   1.4 ms | fail</pre></div><h4 class='cell-title'>4. views</h4><p class='cell-caption'>Tool tracking RMS by speed for both controllers (log scale), and every stop of the shoulder lift joint at full speed.</p><div class='notebook'><pre class='src'><span class="n">speeds</span><span class="p">,</span> <span class="n">tool_values</span><span class="p">,</span> <span class="n">controllers</span> <span class="o">=</span> <span class="p">[],</span> <span class="p">[],</span> <span class="p">[]</span>
+<span class="k">for</span> <span class="p">(</span><span class="n">controller</span><span class="p">,</span> <span class="n">speed</span><span class="p">),</span> <span class="n">stratum</span> <span class="ow">in</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">strata</span><span class="o">.</span><span class="n">items</span><span class="p">()):</span>
+    <span class="n">speeds</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">speed</span><span class="p">)</span>
+    <span class="n">tool_values</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">stratum</span><span class="o">.</span><span class="n">values</span><span class="p">[</span><span class="s2">"tool tracking RMS"</span><span class="p">])</span>
+    <span class="n">controllers</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">controller</span><span class="p">)</span>
+
+<span class="n">speed_view</span> <span class="o">=</span> <span class="n">View</span><span class="p">(</span>
+    <span class="n">title</span><span class="o">=</span><span class="s2">"UR5e (simulated) · tool tracking RMS by speed"</span><span class="p">,</span>
+    <span class="n">unit</span><span class="o">=</span><span class="s2">"mm"</span><span class="p">,</span>
+    <span class="n">hint</span><span class="o">=</span><span class="s2">"kpi_trend"</span><span class="p">,</span>
+    <span class="n">x</span><span class="o">=</span><span class="n">speeds</span><span class="p">,</span>
+    <span class="n">y</span><span class="o">=</span><span class="n">tool_values</span><span class="p">,</span>
+    <span class="n">group</span><span class="o">=</span><span class="n">controllers</span><span class="p">,</span>
+    <span class="n">target</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
+    <span class="n">target_label</span><span class="o">=</span><span class="s2">"1 mm"</span><span class="p">,</span>
+    <span class="n">x_label</span><span class="o">=</span><span class="s2">"speed (x the nominal path)"</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="n">figure</span><span class="p">,</span> <span class="n">axes</span> <span class="o">=</span> <span class="n">plot</span><span class="p">(</span><span class="n">speed_view</span><span class="p">)</span>
+<span class="n">axes</span><span class="o">.</span><span class="n">set_yscale</span><span class="p">(</span><span class="s2">"log"</span><span class="p">)</span>
+<span class="n">figure</span><span class="o">.</span><span class="n">savefig</span><span class="p">(</span><span class="n">MEDIA</span> <span class="o">/</span> <span class="s2">"ur5e-tool-rms-by-speed.png"</span><span class="p">)</span>
+
+<span class="n">full_speed</span> <span class="o">=</span> <span class="p">{}</span>
+<span class="k">for</span> <span class="n">controller</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"pd"</span><span class="p">,</span> <span class="s2">"pd+ff"</span><span class="p">):</span>
+    <span class="n">full_speed</span><span class="p">[</span><span class="n">controller</span><span class="p">]</span> <span class="o">=</span> <span class="n">strata</span><span class="p">[(</span><span class="n">controller</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)]</span><span class="o">.</span><span class="n">merged</span>
+
+<span class="n">stops_view</span> <span class="o">=</span> <span class="n">ur5e</span><span class="o">.</span><span class="n">view</span><span class="p">(</span>
+    <span class="s2">"shoulder_lift/worst stop"</span><span class="p">,</span>
+    <span class="n">full_speed</span><span class="p">,</span>
+    <span class="n">title</span><span class="o">=</span><span class="s2">"UR5e (simulated) · every stop of the shoulder lift, full speed"</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="n">figure</span><span class="p">,</span> <span class="n">axes</span> <span class="o">=</span> <span class="n">plot</span><span class="p">(</span><span class="n">stops_view</span><span class="p">,</span> <span class="n">path</span><span class="o">=</span><span class="n">MEDIA</span> <span class="o">/</span> <span class="s2">"ur5e-shoulder-lift-stops.png"</span><span class="p">)</span></pre></div></details>
+  <p class="muted">Numbers as data: <a href="data/ur5e-sim.json">data/ur5e-sim.json</a></p>
+</div>
+</section>
+
+<section id="install" class="install">
+  <h2>Install</h2>
+  <p class="section-lede">Not on PyPI yet: install the tagged release from GitHub. The runtime needs numpy and
+  robot_msgs; the extras add <code>plot()</code> (viz), the W&amp;B payload and the Rerun writer.</p>
+  <pre>pip install "robot-metrics[viz] @ git+https://github.com/zacharyyamaoka/robot_metrics@v0.1.0"</pre>
+  <pre>git clone https://github.com/zacharyyamaoka/robot_metrics &amp;&amp; cd robot_metrics &amp;&amp; uv run --extra test pytest -q</pre>
+  <p class="muted">The tests that read the private recordings skip without them. This page is built by
+  <code>website/build_site.py</code>; every number and picture on it came from that run.</p>
+</section>
+</main>
+<footer><div class="wrap">robot_metrics v0.1.0 · MIT © 2026 Zach Yamaoka · built 2026-11-18 from
+<a href="https://github.com/zacharyyamaoka/robot_metrics">github.com/zacharyyamaoka/robot_metrics</a> · the UR5e model is MuJoCo Menagerie's (BSD-3-Clause), used
+at build time, not redistributed.</div></footer>
+</body></html>

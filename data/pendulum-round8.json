@@ -1,0 +1,768 @@
+{
+ "what": "1-DOF test rack, round 8 (2026-11-15/17): real plays summarized by station and rung with robot_metrics 0.1.0",
+ "units": {
+  "tracking": "deg",
+  "tip stop": "mm",
+  "settle": "s",
+  "lag": "ms",
+  "limiter share": "%"
+ },
+ "rows": [
+  {
+   "station": "can1",
+   "rung": 0.2,
+   "runs": 7,
+   "tracking_rms_deg": 0.06802238327955,
+   "tracking_peak_deg": 0.20869121673881352,
+   "tip_stop_mm": {
+    "n": 14,
+    "median": 0.016946364426568383,
+    "p95": 0.04152317617373365,
+    "worst": 0.0610671309619264
+   },
+   "tip_settle_s": 0.0,
+   "lag_ms": 0.1825496090569889,
+   "limiter_share_pct": 0.0,
+   "verdicts": {
+    "tracks": "pass",
+    "tip stop (median)": "pass",
+    "tip stop (every stop)": "pass"
+   }
+  },
+  {
+   "station": "can1",
+   "rung": 0.4,
+   "runs": 7,
+   "tracking_rms_deg": 0.1386574856299355,
+   "tracking_peak_deg": 0.44246988382525965,
+   "tip_stop_mm": {
+    "n": 14,
+    "median": 0.01565052377831925,
+    "p95": 0.030462957570635024,
+    "worst": 0.047080167492559055
+   },
+   "tip_settle_s": 0.0,
+   "lag_ms": 0.19899397232215058,
+   "limiter_share_pct": 0.0,
+   "verdicts": {
+    "tracks": "pass",
+    "tip stop (median)": "pass",
+    "tip stop (every stop)": "pass"
+   }
+  },
+  {
+   "station": "can1",
+   "rung": 0.6,
+   "runs": 7,
+   "tracking_rms_deg": 0.20619915423877558,
+   "tracking_peak_deg": 0.5355876152313018,
+   "tip_stop_mm": {
+    "n": 14,
+    "median": 0.031075444832306343,
+    "p95": 0.04903648869688776,
+    "worst": 0.050240525885457174
+   },
+   "tip_settle_s": 0.0,
+   "lag_ms": 0.13062852754332,
+   "limiter_share_pct": 0.0,
+   "verdicts": {
+    "tracks": "pass",
+    "tip stop (median)": "pass",
+    "tip stop (every stop)": "pass"
+   }
+  },
+  {
+   "station": "can1",
+   "rung": 0.8,
+   "runs": 7,
+   "tracking_rms_deg": 0.3080021192645737,
+   "tracking_peak_deg": 0.8416987675118858,
+   "tip_stop_mm": {
+    "n": 14,
+    "median": 0.026764520659833965,
+    "p95": 0.06284148113417884,
+    "worst": 0.07253455417363038
+   },
+   "tip_settle_s": 0.0,
+   "lag_ms": 0.07834979437045406,
+   "limiter_share_pct": 0.0,
+   "verdicts": {
+    "tracks": "pass",
+    "tip stop (median)": "pass",
+    "tip stop (every stop)": "pass"
+   }
+  },
+  {
+   "station": "can1",
+   "rung": 0.9,
+   "runs": 7,
+   "tracking_rms_deg": 0.414939360082281,
+   "tracking_peak_deg": 1.0993343022472262,
+   "tip_stop_mm": {
+    "n": 14,
+    "median": 0.02289735878545862,
+    "p95": 0.05105124014121415,
+    "worst": 0.06555932521040729
+   },
+   "tip_settle_s": 0.0,
+   "lag_ms": 0.15442703363000193,
+   "limiter_share_pct": 0.0,
+   "verdicts": {
+    "tracks": "pass",
+    "tip stop (median)": "pass",
+    "tip stop (every stop)": "pass"
+   }
+  },
+  {
+   "station": "can1",
+   "rung": 1.0,
+   "runs": 7,
+   "tracking_rms_deg": 1.2093675686375405,
+   "tracking_peak_deg": 3.9531472426795555,
+   "tip_stop_mm": {
+    "n": 14,
+    "median": 0.02196593266397448,
+    "p95": 0.044256793683951114,
+    "worst": 0.06529539215380953
+   },
+   "tip_settle_s": 0.0,
+   "lag_ms": 0.7232441601175649,
+   "limiter_share_pct": 0.0,
+   "verdicts": {
+    "tracks": "fail",
+    "tip stop (median)": "pass",
+    "tip stop (every stop)": "pass"
+   }
+  },
+  {
+   "station": "can11",
+   "rung": 0.2,
+   "runs": 7,
+   "tracking_rms_deg": 0.0951447314366479,
+   "tracking_peak_deg": 0.31303312477159695,
+   "tip_stop_mm": {
+    "n": 14,
+    "median": 0.29066015954751184,
+    "p95": 0.5463756818587362,
+    "worst": 0.6097530568482183
+   },
+   "tip_settle_s": 0.0,
+   "lag_ms": -1.3509788592810978,
+   "limiter_share_pct": 0.0,
+   "verdicts": {
+    "tracks": "pass",
+    "tip stop (median)": "pass",
+    "tip stop (every stop)": "pass"
+   }
+  },
+  {
+   "station": "can11",
+   "rung": 0.4,
+   "runs": 7,
+   "tracking_rms_deg": 0.07949900857128904,
+   "tracking_peak_deg": 0.27035299388195994,
+   "tip_stop_mm": {
+    "n": 14,
+    "median": 0.16322111501433872,
+    "p95": 1.1040491647426378,
+    "worst": 1.2929982434317127
+   },
+   "tip_settle_s": 0.0,
+   "lag_ms": -0.4159051295981529,
+   "limiter_share_pct": 0.0,
+   "verdicts": {
+    "tracks": "pass",
+    "tip stop (median)": "pass",
+    "tip stop (every stop)": "fail"
+   }
+  },
+  {
+   "station": "can11",
+   "rung": 0.6,
+   "runs": 7,
+   "tracking_rms_deg": 0.06091510684966181,
+   "tracking_peak_deg": 0.1967585748540342,
+   "tip_stop_mm": {
+    "n": 14,
+    "median": 0.2195565594494232,
+    "p95": 0.5557765905032983,
+    "worst": 0.5762533910808869
+   },
+   "tip_settle_s": 0.0,
+   "lag_ms": -0.15500572617070651,
+   "limiter_share_pct": 0.0,
+   "verdicts": {
+    "tracks": "pass",
+    "tip stop (median)": "pass",
+    "tip stop (every stop)": "pass"
+   }
+  },
+  {
+   "station": "can11",
+   "rung": 0.8,
+   "runs": 7,
+   "tracking_rms_deg": 0.09894637857118249,
+   "tracking_peak_deg": 0.3177465544310817,
+   "tip_stop_mm": {
+    "n": 14,
+    "median": 0.2504750994687855,
+    "p95": 0.6415500817360824,
+    "worst": 0.7126735803354157
+   },
+   "tip_settle_s": 0.0,
+   "lag_ms": -0.4311921077819014,
+   "limiter_share_pct": 0.0,
+   "verdicts": {
+    "tracks": "pass",
+    "tip stop (median)": "pass",
+    "tip stop (every stop)": "pass"
+   }
+  },
+  {
+   "station": "can11",
+   "rung": 0.9,
+   "runs": 7,
+   "tracking_rms_deg": 0.13471321573499875,
+   "tracking_peak_deg": 0.3783474166874286,
+   "tip_stop_mm": {
+    "n": 14,
+    "median": 0.37386836949961205,
+    "p95": 0.8808720646538712,
+    "worst": 1.142941174428201
+   },
+   "tip_settle_s": 0.0,
+   "lag_ms": -0.5884703890635314,
+   "limiter_share_pct": 0.0,
+   "verdicts": {
+    "tracks": "pass",
+    "tip stop (median)": "pass",
+    "tip stop (every stop)": "fail"
+   }
+  },
+  {
+   "station": "can11",
+   "rung": 1.0,
+   "runs": 7,
+   "tracking_rms_deg": 0.16313092321431105,
+   "tracking_peak_deg": 0.6048525221925248,
+   "tip_stop_mm": {
+    "n": 14,
+    "median": 0.5577511081389009,
+    "p95": 1.1287903210724923,
+    "worst": 1.3171758816081196
+   },
+   "tip_settle_s": 0.0,
+   "lag_ms": -0.7070208377339166,
+   "limiter_share_pct": 0.0,
+   "verdicts": {
+    "tracks": "pass",
+    "tip stop (median)": "pass",
+    "tip stop (every stop)": "fail"
+   }
+  },
+  {
+   "station": "can12",
+   "rung": 0.2,
+   "runs": 7,
+   "tracking_rms_deg": 0.07076756542428023,
+   "tracking_peak_deg": 0.27673278969030324,
+   "tip_stop_mm": {
+    "n": 14,
+    "median": 0.028158667532371763,
+    "p95": 0.049206323316555105,
+    "worst": 0.05245412816074102
+   },
+   "tip_settle_s": 0.0,
+   "lag_ms": 0.2561754673760273,
+   "limiter_share_pct": 0.0,
+   "verdicts": {
+    "tracks": "pass",
+    "tip stop (median)": "pass",
+    "tip stop (every stop)": "pass"
+   }
+  },
+  {
+   "station": "can12",
+   "rung": 0.4,
+   "runs": 7,
+   "tracking_rms_deg": 0.13095165229419234,
+   "tracking_peak_deg": 0.3207999747684698,
+   "tip_stop_mm": {
+    "n": 14,
+    "median": 0.022240616322205087,
+    "p95": 0.027208965265300422,
+    "worst": 0.0285719647693454
+   },
+   "tip_settle_s": 0.0,
+   "lag_ms": 0.32454091215486003,
+   "limiter_share_pct": 0.0,
+   "verdicts": {
+    "tracks": "pass",
+    "tip stop (median)": "pass",
+    "tip stop (every stop)": "pass"
+   }
+  },
+  {
+   "station": "can12",
+   "rung": 0.6,
+   "runs": 7,
+   "tracking_rms_deg": 0.1835089101434864,
+   "tracking_peak_deg": 0.536907942492262,
+   "tip_stop_mm": {
+    "n": 14,
+    "median": 0.039315619509561965,
+    "p95": 0.07465667923263207,
+    "worst": 0.08663615296574462
+   },
+   "tip_settle_s": 0.0,
+   "lag_ms": 0.23504938311137089,
+   "limiter_share_pct": 0.0,
+   "verdicts": {
+    "tracks": "pass",
+    "tip stop (median)": "pass",
+    "tip stop (every stop)": "pass"
+   }
+  },
+  {
+   "station": "can12",
+   "rung": 0.8,
+   "runs": 7,
+   "tracking_rms_deg": 0.22726448960054413,
+   "tracking_peak_deg": 0.5118227428129961,
+   "tip_stop_mm": {
+    "n": 14,
+    "median": 0.09037432594121704,
+    "p95": 0.12333842163094343,
+    "worst": 0.12664127401485814
+   },
+   "tip_settle_s": 0.0,
+   "lag_ms": 0.0917640841544022,
+   "limiter_share_pct": 0.0,
+   "verdicts": {
+    "tracks": "pass",
+    "tip stop (median)": "pass",
+    "tip stop (every stop)": "pass"
+   }
+  },
+  {
+   "station": "can12",
+   "rung": 0.9,
+   "runs": 7,
+   "tracking_rms_deg": 0.2539558103340913,
+   "tracking_peak_deg": 0.5628093672999618,
+   "tip_stop_mm": {
+    "n": 14,
+    "median": 0.10342351092528113,
+    "p95": 0.13715213343982374,
+    "worst": 0.14251721929797712
+   },
+   "tip_settle_s": 0.0,
+   "lag_ms": 0.07193199574883417,
+   "limiter_share_pct": 0.0,
+   "verdicts": {
+    "tracks": "pass",
+    "tip stop (median)": "pass",
+    "tip stop (every stop)": "pass"
+   }
+  },
+  {
+   "station": "can12",
+   "rung": 1.0,
+   "runs": 7,
+   "tracking_rms_deg": 0.9314336141409222,
+   "tracking_peak_deg": 2.6192892923497126,
+   "tip_stop_mm": {
+    "n": 14,
+    "median": 0.11537838864783478,
+    "p95": 0.15000151474609552,
+    "worst": 0.16129996723177825
+   },
+   "tip_settle_s": 0.0,
+   "lag_ms": 0.8102843082205533,
+   "limiter_share_pct": 0.0,
+   "verdicts": {
+    "tracks": "fail",
+    "tip stop (median)": "pass",
+    "tip stop (every stop)": "pass"
+   }
+  },
+  {
+   "station": "can13",
+   "rung": 0.2,
+   "runs": 7,
+   "tracking_rms_deg": 0.08127831759440901,
+   "tracking_peak_deg": 0.20435659876768558,
+   "tip_stop_mm": {
+    "n": 14,
+    "median": 0.010823976285445253,
+    "p95": 0.032278903712351495,
+    "worst": 0.03521148012211445
+   },
+   "tip_settle_s": 0.0,
+   "lag_ms": 0.3896552425709644,
+   "limiter_share_pct": 0.0,
+   "verdicts": {
+    "tracks": "pass",
+    "tip stop (median)": "pass",
+    "tip stop (every stop)": "pass"
+   }
+  },
+  {
+   "station": "can13",
+   "rung": 0.4,
+   "runs": 7,
+   "tracking_rms_deg": 0.11921522687654863,
+   "tracking_peak_deg": 0.3315895394790853,
+   "tip_stop_mm": {
+    "n": 14,
+    "median": 0.010861365306679341,
+    "p95": 0.028805706344572215,
+    "worst": 0.029727722397457693
+   },
+   "tip_settle_s": 0.0,
+   "lag_ms": 0.32093214613293947,
+   "limiter_share_pct": 0.0,
+   "verdicts": {
+    "tracks": "pass",
+    "tip stop (median)": "pass",
+    "tip stop (every stop)": "pass"
+   }
+  },
+  {
+   "station": "can13",
+   "rung": 0.6,
+   "runs": 7,
+   "tracking_rms_deg": 0.12872390180243135,
+   "tracking_peak_deg": 0.3438674671692884,
+   "tip_stop_mm": {
+    "n": 14,
+    "median": 0.016202496422970808,
+    "p95": 0.03385695133276006,
+    "worst": 0.04857004402923011
+   },
+   "tip_settle_s": 0.0,
+   "lag_ms": 0.23540703477056454,
+   "limiter_share_pct": 0.0,
+   "verdicts": {
+    "tracks": "pass",
+    "tip stop (median)": "pass",
+    "tip stop (every stop)": "pass"
+   }
+  },
+  {
+   "station": "can13",
+   "rung": 0.8,
+   "runs": 7,
+   "tracking_rms_deg": 0.13582750722915696,
+   "tracking_peak_deg": 0.46607529239657647,
+   "tip_stop_mm": {
+    "n": 14,
+    "median": 0.02502384645177247,
+    "p95": 0.07285371871619456,
+    "worst": 0.08025709349372771
+   },
+   "tip_settle_s": 0.0,
+   "lag_ms": 0.14555785406787494,
+   "limiter_share_pct": 0.0,
+   "verdicts": {
+    "tracks": "pass",
+    "tip stop (median)": "pass",
+    "tip stop (every stop)": "pass"
+   }
+  },
+  {
+   "station": "can13",
+   "rung": 0.9,
+   "runs": 7,
+   "tracking_rms_deg": 0.14100173484815945,
+   "tracking_peak_deg": 0.4818204104201539,
+   "tip_stop_mm": {
+    "n": 14,
+    "median": 0.0600754831040362,
+    "p95": 0.09050792010877348,
+    "worst": 0.09544350329379551
+   },
+   "tip_settle_s": 0.0,
+   "lag_ms": 0.14368516566807518,
+   "limiter_share_pct": 0.0,
+   "verdicts": {
+    "tracks": "pass",
+    "tip stop (median)": "pass",
+    "tip stop (every stop)": "pass"
+   }
+  },
+  {
+   "station": "can13",
+   "rung": 1.0,
+   "runs": 7,
+   "tracking_rms_deg": 0.5864685776894739,
+   "tracking_peak_deg": 1.9624494608674947,
+   "tip_stop_mm": {
+    "n": 14,
+    "median": 0.06988337276657826,
+    "p95": 0.11055398104486287,
+    "worst": 0.11746379750389384
+   },
+   "tip_settle_s": 0.0,
+   "lag_ms": 0.5423884136307731,
+   "limiter_share_pct": 0.0,
+   "verdicts": {
+    "tracks": "fail",
+    "tip stop (median)": "pass",
+    "tip stop (every stop)": "pass"
+   }
+  },
+  {
+   "station": "can14",
+   "rung": 0.2,
+   "runs": 7,
+   "tracking_rms_deg": 0.0822172290816915,
+   "tracking_peak_deg": 0.33355418819897953,
+   "tip_stop_mm": {
+    "n": 14,
+    "median": 0.015018337080855825,
+    "p95": 0.028485983395750942,
+    "worst": 0.04594244298555367
+   },
+   "tip_settle_s": 0.0,
+   "lag_ms": -0.19747893558154367,
+   "limiter_share_pct": 0.0,
+   "verdicts": {
+    "tracks": "pass",
+    "tip stop (median)": "pass",
+    "tip stop (every stop)": "pass"
+   }
+  },
+  {
+   "station": "can14",
+   "rung": 0.4,
+   "runs": 7,
+   "tracking_rms_deg": 0.10749275966827039,
+   "tracking_peak_deg": 0.6744581801685408,
+   "tip_stop_mm": {
+    "n": 14,
+    "median": 0.01977367752329906,
+    "p95": 0.02879272765111582,
+    "worst": 0.034530726727084016
+   },
+   "tip_settle_s": 0.0,
+   "lag_ms": -0.04719714546225118,
+   "limiter_share_pct": 0.0,
+   "verdicts": {
+    "tracks": "pass",
+    "tip stop (median)": "pass",
+    "tip stop (every stop)": "pass"
+   }
+  },
+  {
+   "station": "can14",
+   "rung": 0.6,
+   "runs": 7,
+   "tracking_rms_deg": 0.1820890866085702,
+   "tracking_peak_deg": 0.7498064233013734,
+   "tip_stop_mm": {
+    "n": 14,
+    "median": 0.03476715580038209,
+    "p95": 0.05545603248345267,
+    "worst": 0.06578944681879761
+   },
+   "tip_settle_s": 0.0,
+   "lag_ms": -0.03342520401910974,
+   "limiter_share_pct": 0.0,
+   "verdicts": {
+    "tracks": "pass",
+    "tip stop (median)": "pass",
+    "tip stop (every stop)": "pass"
+   }
+  },
+  {
+   "station": "can14",
+   "rung": 0.8,
+   "runs": 7,
+   "tracking_rms_deg": 0.25651990790084866,
+   "tracking_peak_deg": 0.8989849054340707,
+   "tip_stop_mm": {
+    "n": 14,
+    "median": 0.04029473053320856,
+    "p95": 0.05949545747508489,
+    "worst": 0.07257787636889691
+   },
+   "tip_settle_s": 0.0,
+   "lag_ms": -0.06342046784589994,
+   "limiter_share_pct": 0.0,
+   "verdicts": {
+    "tracks": "pass",
+    "tip stop (median)": "pass",
+    "tip stop (every stop)": "pass"
+   }
+  },
+  {
+   "station": "can14",
+   "rung": 0.9,
+   "runs": 7,
+   "tracking_rms_deg": 0.3485241104147316,
+   "tracking_peak_deg": 1.056351620799151,
+   "tip_stop_mm": {
+    "n": 14,
+    "median": 0.039377166619195346,
+    "p95": 0.058593515823190674,
+    "worst": 0.06080158091231913
+   },
+   "tip_settle_s": 0.0,
+   "lag_ms": 0.003208899310807239,
+   "limiter_share_pct": 0.0,
+   "verdicts": {
+    "tracks": "pass",
+    "tip stop (median)": "pass",
+    "tip stop (every stop)": "pass"
+   }
+  },
+  {
+   "station": "can14",
+   "rung": 1.0,
+   "runs": 7,
+   "tracking_rms_deg": 1.2173281510518414,
+   "tracking_peak_deg": 3.6779636933305517,
+   "tip_stop_mm": {
+    "n": 14,
+    "median": 0.04111539222083638,
+    "p95": 0.06448551333420849,
+    "worst": 0.07432410456424376
+   },
+   "tip_settle_s": 0.0,
+   "lag_ms": 0.6773832255663209,
+   "limiter_share_pct": 0.0,
+   "verdicts": {
+    "tracks": "fail",
+    "tip stop (median)": "pass",
+    "tip stop (every stop)": "pass"
+   }
+  },
+  {
+   "station": "can15",
+   "rung": 0.2,
+   "runs": 7,
+   "tracking_rms_deg": 0.030758331164143237,
+   "tracking_peak_deg": 0.21842182075194347,
+   "tip_stop_mm": {
+    "n": 14,
+    "median": 0.02296974971538468,
+    "p95": 0.11923290614518911,
+    "worst": 0.1254647030959788
+   },
+   "tip_settle_s": 0.0,
+   "lag_ms": 0.062126471986806486,
+   "limiter_share_pct": 0.0,
+   "verdicts": {
+    "tracks": "pass",
+    "tip stop (median)": "pass",
+    "tip stop (every stop)": "pass"
+   }
+  },
+  {
+   "station": "can15",
+   "rung": 0.4,
+   "runs": 7,
+   "tracking_rms_deg": 0.05209304706224744,
+   "tracking_peak_deg": 0.21704075884356988,
+   "tip_stop_mm": {
+    "n": 14,
+    "median": 0.030142544969846814,
+    "p95": 0.0674396673973676,
+    "worst": 0.08711518339883373
+   },
+   "tip_settle_s": 0.0,
+   "lag_ms": 0.11440520515967025,
+   "limiter_share_pct": 0.0,
+   "verdicts": {
+    "tracks": "pass",
+    "tip stop (median)": "pass",
+    "tip stop (every stop)": "pass"
+   }
+  },
+  {
+   "station": "can15",
+   "rung": 0.6,
+   "runs": 7,
+   "tracking_rms_deg": 0.07809155977666467,
+   "tracking_peak_deg": 0.423836116570157,
+   "tip_stop_mm": {
+    "n": 14,
+    "median": 0.025246767133950687,
+    "p95": 0.08345039066959381,
+    "worst": 0.08711518339883373
+   },
+   "tip_settle_s": 0.0,
+   "lag_ms": 0.12688315074371811,
+   "limiter_share_pct": 0.0,
+   "verdicts": {
+    "tracks": "pass",
+    "tip stop (median)": "pass",
+    "tip stop (every stop)": "pass"
+   }
+  },
+  {
+   "station": "can15",
+   "rung": 0.8,
+   "runs": 7,
+   "tracking_rms_deg": 0.10890939823570556,
+   "tracking_peak_deg": 0.45613728198079034,
+   "tip_stop_mm": {
+    "n": 14,
+    "median": 0.06218799559569721,
+    "p95": 0.07636036333643514,
+    "worst": 0.07803119606677456
+   },
+   "tip_settle_s": 0.0,
+   "lag_ms": 0.12385307726250558,
+   "limiter_share_pct": 0.0,
+   "verdicts": {
+    "tracks": "pass",
+    "tip stop (median)": "pass",
+    "tip stop (every stop)": "pass"
+   }
+  },
+  {
+   "station": "can15",
+   "rung": 0.9,
+   "runs": 7,
+   "tracking_rms_deg": 0.29560731312904137,
+   "tracking_peak_deg": 0.9732786894480961,
+   "tip_stop_mm": {
+    "n": 14,
+    "median": 0.02871713386822239,
+    "p95": 0.06080480691272576,
+    "worst": 0.06263235311168755
+   },
+   "tip_settle_s": 0.0,
+   "lag_ms": 0.3031937870086898,
+   "limiter_share_pct": 0.0,
+   "verdicts": {
+    "tracks": "pass",
+    "tip stop (median)": "pass",
+    "tip stop (every stop)": "pass"
+   }
+  },
+  {
+   "station": "can15",
+   "rung": 1.0,
+   "runs": 7,
+   "tracking_rms_deg": 1.205106019158291,
+   "tracking_peak_deg": 3.343670323329213,
+   "tip_stop_mm": {
+    "n": 14,
+    "median": 0.03590766881143755,
+    "p95": 0.13161863862194254,
+    "worst": 0.17340160271741567
+   },
+   "tip_settle_s": 0.0,
+   "lag_ms": 1.1606752406915033,
+   "limiter_share_pct": 0.04940711462450593,
+   "verdicts": {
+    "tracks": "fail",
+    "tip stop (median)": "pass",
+    "tip stop (every stop)": "pass"
+   }
+  }
+ ]
+}

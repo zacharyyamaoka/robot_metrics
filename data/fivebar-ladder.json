@@ -1,0 +1,109 @@
+{
+ "what": "bam_fb five-bar speed ladder (2026-11-10), real and its sim twin, by rung",
+ "units": {
+  "j2/c1 tracking": "deg",
+  "tool": "mm"
+ },
+ "rows": [
+  {
+   "source": "real",
+   "rung": "vertical.0.10mps.full_ff",
+   "j2/tracking RMS": 0.6524603425634767,
+   "c1/tracking RMS": 0.5967845063939318,
+   "tool tracking RMS": 5.035375292080164,
+   "tool worst": 24.793489997854422,
+   "runs": 1,
+   "faulted runs": 0
+  },
+  {
+   "source": "real",
+   "rung": "vertical.0.10mps.gravity_ff",
+   "j2/tracking RMS": 0.6249225874400524,
+   "c1/tracking RMS": 0.555605094161548,
+   "tool tracking RMS": 5.144788202376537,
+   "tool worst": 23.79839331109302,
+   "runs": 1,
+   "faulted runs": 0
+  },
+  {
+   "source": "real",
+   "rung": "vertical.0.20mps.full_ff",
+   "j2/tracking RMS": 0.7621421078920376,
+   "c1/tracking RMS": 0.5549054459144058,
+   "tool tracking RMS": 5.290272036113707,
+   "tool worst": 26.20754169306313,
+   "runs": 1,
+   "faulted runs": 0
+  },
+  {
+   "source": "real",
+   "rung": "vertical.0.20mps.gravity_ff",
+   "j2/tracking RMS": 0.9099957331216242,
+   "c1/tracking RMS": 0.6917313991712687,
+   "tool tracking RMS": 6.803662587380191,
+   "tool worst": 33.06756511403428,
+   "runs": 1,
+   "faulted runs": 0
+  },
+  {
+   "source": "real",
+   "rung": "vertical.0.35mps.full_ff",
+   "j2/tracking RMS": 0.97695269173833,
+   "c1/tracking RMS": 0.5815375110236579,
+   "tool tracking RMS": 5.9673963483010635,
+   "tool worst": 22.906831029987156,
+   "runs": 1,
+   "faulted runs": 0
+  },
+  {
+   "source": "sim",
+   "rung": "vertical.0.10mps.full_ff",
+   "j2/tracking RMS": 0.8439588676155808,
+   "c1/tracking RMS": 0.4352412845527865,
+   "tool tracking RMS": 3.9596668134683912,
+   "tool worst": 9.463911303925501,
+   "runs": 1,
+   "faulted runs": 0
+  },
+  {
+   "source": "sim",
+   "rung": "vertical.0.10mps.gravity_ff",
+   "j2/tracking RMS": 0.9081014974000616,
+   "c1/tracking RMS": 0.5143088363088886,
+   "tool tracking RMS": 4.829135043220046,
+   "tool worst": 17.895735200016954,
+   "runs": 1,
+   "faulted runs": 0
+  },
+  {
+   "source": "sim",
+   "rung": "vertical.0.20mps.full_ff",
+   "j2/tracking RMS": 0.8710070178712469,
+   "c1/tracking RMS": 0.4216317368454496,
+   "tool tracking RMS": 4.0660358471981315,
+   "tool worst": 10.546415898951578,
+   "runs": 1,
+   "faulted runs": 0
+  },
+  {
+   "source": "sim",
+   "rung": "vertical.0.20mps.gravity_ff",
+   "j2/tracking RMS": 1.083387663387142,
+   "c1/tracking RMS": 0.6512936609804122,
+   "tool tracking RMS": 6.46881433112761,
+   "tool worst": 27.011391361465204,
+   "runs": 1,
+   "faulted runs": 0
+  },
+  {
+   "source": "sim",
+   "rung": "vertical.0.35mps.full_ff",
+   "j2/tracking RMS": 0.8879229970590581,
+   "c1/tracking RMS": 0.42911034606576215,
+   "tool tracking RMS": 4.235688054724158,
+   "tool worst": 9.392464793850623,
+   "runs": 1,
+   "faulted runs": 0
+  }
+ ]
+}
