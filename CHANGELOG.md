@@ -2,7 +2,14 @@
 
 ## Unreleased
 
-Docs and checks only; the API is unchanged.
+- **W&B gets summary statistics only** (Zach, 2026-11-21: "to help limit W and B storage I think we need to just be
+  using it for summary statistics; for the media-rich things we should be using rerun!"). `adapters.wandb.log` no
+  longer sends a `wandb.Table`: it sends the summary scalars (`n`, `max`, `target`) and returns exactly what it sent;
+  the new `rows_path=` writes the rows as jsonl on this computer and sends that path as a string. `payload()` is
+  unchanged. The coverage gallery's W&B column (`docs/proposals/coverage-2026-11-19/tools_wandb.py`) logs each
+  view's counts, shares, ranges and percentiles, and points at the Rerun column's .rrd for the picture.
+
+Otherwise docs and checks only:
 
 - **Every Python block shown to a reader runs as shown.** The landing page's glance, each catalog card, each gallery
   arm, the v0 report's glance and usage session, and the README: each imports what it uses, says where its data comes

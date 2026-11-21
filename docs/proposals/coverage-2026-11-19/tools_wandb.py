@@ -1,10 +1,19 @@
-"""The Weights & Biases column of "same view, four tools": each core type logged the most W&B-native way.
+"""The Weights & Biases column of "same view, four tools": each core type's summary statistics, as W&B scalars.
+
+Summary statistics only, since 2026-11-21. WHY (Zach, 2026-11-21: "to help limit W and B storage I think we need to just
+be using it for summary statistics; for the media-rich things we should be using rerun!"): the entity was at 17 GB
+against the Free plan's 5 GB cap. Until then this column logged each type the most W&B-native way: histograms over steps,
+Tables + `wandb.plot.*` / `wandb.plot_table` custom charts (a private Vega-Lite heatmap spec) and `wandb.Object3D` point
+clouds, ~8 MB of files for 8 runs. Now each type function logs only numbers W&B can chart from a run's history and
+summary (counts, coverage shares, ranges, percentiles, the share of each limit used) and puts the path of the type's
+.rrd in the gallery's Rerun column (`tools_rerun.py`, written by `tools_rerun.capture()`) in the run config: the
+point clouds, heatmaps and histograms live there. The gallery page built on 2026-11-19 still shows the W&B screenshots
+and notes of the media version (`reports/media/coverage-gallery-2026-11-19/tools/wandb/`); this file is what runs now.
 
 Each type function's source is shown verbatim in the report as "the W&B implementation". It logs only
-`by_id(<type>).data()` into the run it is handed, using W&B's own panels (histograms over steps, scalars over steps,
-Tables + `wandb.plot.*` charts, `wandb.Object3D` point clouds), never a matplotlib image (that is the Matplotlib column).
+`by_id(<type>).data()` into the run it is handed, never a matplotlib image (that is the Matplotlib column).
 
-One W&B run per type (`log_all`), WHY: two types use the step axis for "recorded run" (histogram-over-runs,
+One W&B run per type (`log_all`), WHY: two types use the step axis for "recorded run" (percentiles-over-runs,
 coverage-growth) and the rest log once, so one shared run would mix step meanings; a run per type also opens on a
 workspace that holds only that type's keys, and a report section can filter to it by job type.
 
@@ -12,23 +21,21 @@ workspace that holds only that type's keys, and a report section can filter to i
         --with wandb==0.31.0 --with wandb-workspaces==0.4.13 python -c "import tools_wandb as t; print(t.log_all())"
 
 Re-check (or re-report) what is already on W&B without logging again: `t.publish(t.logged_in_project())`.
-Fix one panel in place (resume the run, log only that key): `t.relog("grasp-poses", ["grasps/grippers"])`.
-Logged once on 2026-11-19 07:05 (8 runs, ~8 MB of files; heatmap spec zach-yamaoka-independent/coverage-heatmap);
-07:3x: heatmap spec made linear, and grasps/grippers, tool_paths/* (base_link data, cm, exact boxes), phase_space/cells
-re-logged into their own runs at step 1.
+Fix one panel in place (resume the run, log only that key): `t.relog("grasp-poses", ["grasps/at_claw_limit_pct"])`.
+Media version logged once on 2026-11-19 07:05 (8 runs); summary-only version not logged yet (2026-11-21). `publish()`
+replaces this gallery's older runs only after the new ones verify, so the next `log_all()` also retires the media runs.
 Registered as a W&B tracker before its first run: bam_ws tools/wandb_trackers/trackers/robot_dataset_coverage_gallery.py.
 """
 
 from __future__ import annotations
 
 import hashlib
-import itertools
-import json
+import math
 import re
 import time
+from pathlib import Path
 from urllib.parse import quote
 
-import matplotlib
 import numpy as np
 import wandb
 
@@ -39,127 +46,75 @@ PROJECT = "Robot dataset coverage gallery"
 TAG = "coverage-gallery"
 WANDB_DIR = CACHE / "wandb"                  # W&B's local run files: a cache next to the ledger, never the repo
 DEG = 180.0 / np.pi
-MAX_POINTS = 90_000                          # per Object3D: the Free plan is near its 5 GB cap, keep the project small
-
-# WHY a custom chart: W&B ships no heatmap / 2-D histogram preset (wandb 0.31 has 17 presets; wandb/heatmap/v0 and
-# friends do not exist on the server, probed 2026-11-19). This Vega-Lite spec is saved PRIVATE under the entity, as the
-# Panel Gallery's gate-heatmap is, and every heatmap here is a plain wandb.plot_table against it.
-HEATMAP_CHART = f"{ENTITY}/coverage-heatmap"
-HEATMAP_SPEC = {
-    "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
-    "title": "${string:title}",
-    "data": {"name": "wandb"},
-    "width": "container", "height": 320,
-    "encoding": {
-        "x": {"field": "${field:x_low}", "type": "quantitative", "bin": {"binned": True}, "title": "${string:x_title}"},
-        "x2": {"field": "${field:x_high}"},
-        "y": {"field": "${field:y_low}", "type": "quantitative", "bin": {"binned": True}, "title": "${string:y_title}"},
-        "y2": {"field": "${field:y_high}"},
-        "tooltip": [{"field": "${field:count}", "title": "${string:color_title}"},
-                    {"field": "${field:x_low}", "title": "x from"}, {"field": "${field:y_low}", "title": "y from"}],
-    },
-    "layer": [   # white = reachable but empty, grey = unreachable, blue = visited (linear: 1 = the lightest tint)
-        {"mark": {"type": "rect", "stroke": "#e5e5ea", "strokeWidth": 0.5},
-         "encoding": {"color": {"condition": {"test": "datum['${field:reachable}'] > 0", "value": "white"},
-                                "value": "#d2d2d7"}}},
-        {"transform": [{"filter": "datum['${field:count}'] > 0"}],
-         "mark": {"type": "rect", "stroke": "white", "strokeWidth": 0.5},
-         "encoding": {"color": {"field": "${field:count}", "type": "quantitative", "title": "${string:color_title}",
-                                # WHY linear (Zach, 2026-11-19: "better to just have a linear scale"); zero
-                                # stays white because the filter leaves empty cells to the layer below
-                                "scale": {"type": "linear", "zero": False, "range": ["#d6e4f5", "#0d2f5c"]}}}},
-    ],
-}
-
-GREY = (150, 150, 150)
+# The gallery's Rerun column writes one .rrd per type here (= tools_rerun.MEDIA; not imported, WHY: tools_rerun pulls
+# rerun-sdk into this column's venv). W&B gets this path, never the picture.
+RERUN_MEDIA = Path("/home/bam/robot_metrics/reports/media/coverage-gallery-2026-11-19/tools/rerun")
 
 
-def rgb(fraction, colormap: str = "plasma") -> np.ndarray:
-    """0..1 -> (N, 3) RGB in 0..255, the per-point colour a W&B point cloud takes ([x, y, z, r, g, b] rows)."""
-    return (np.asarray(matplotlib.colormaps[colormap](np.clip(fraction, 0, 1)))[..., :3] * 255).round()
+def spread(key: str, values) -> dict:
+    """min, p1, p50, p99, max of `values` as five scalars named `key.format(stat)` (NaN ignored): a histogram's summary."""
+    values = np.asarray(values, float)
+    stats = dict(zip(("p01", "p50", "p99"), np.nanpercentile(values, [1, 50, 99])))
+    return {key.format(stat): float(value) for stat, value in
+            {"min": np.nanmin(values), **stats, "max": np.nanmax(values)}.items()}
 
 
-def box(centre, size, rotation=np.eye(3), colour=(255, 0, 0)) -> dict:
-    """A W&B Box3D: 8 corners in wandb.box3d's order and an RGB colour in 0..255, like a point's. WHY 0..255:
-    wandb.box3d's docstring and the last public weave-js say 0..1, but W&B's live viewer (Forge) draws 0..1 box
-    colours near-black and 0..255 ones correctly (seen in Zach's browser, 2026-11-19). WHY not wandb.box3d, and why cm
-    (weave-js SdkPointCloudToBabylon.ts + render_babylon.ts, read 2026-11-19):
-    - wandb 0.31's box3d takes abs() of each quaternion component, which mirrors most rotations;
-    - the viewer finds a box's edges by testing corner triples for |dot| < 0.003 (absolute units), so a box whose edges
-      are under ~5 units passes the wrong triple (diagonals drawn as edges) or throws "Provided corners do not form a
-      box"; corners are therefore never rounded and small scenes are logged in cm;
-    - a box with score None prints "(null)" beside it, so label and score are left out."""
-    unit = np.array(list(itertools.product((-1, 1), repeat=3)), float)
-    corners = np.asarray(centre, float) + (0.5 * np.asarray(size, float) * unit) @ np.asarray(rotation, float).T
-    return {"corners": corners.tolist(), "color": [int(c) for c in colour]}
-
-
-def cloud(xyz, colours) -> np.ndarray:
-    return np.column_stack([np.round(xyz, 4), colours])
+def rerun_pointer(run, type_id: str) -> None:
+    """The picture of this type lives in the gallery's Rerun column: its .rrd path and writer go in the run config."""
+    run.config.update({"rerun_rrd": str(RERUN_MEDIA / f"{type_id}.rrd"),
+                       "rerun_writer": f"docs/proposals/coverage-2026-11-19/tools_rerun.py::{type_id.replace('-', '_')}"})
 
 
 # --- the eight types ---------------------------------------------------------------------------------------------------
 
 def limit_bars(run) -> None:
     payload = by_id("limit-bars").data()
-    bars = wandb.Table(columns=["limit", "used_pct"])
-    for name, unit, values, limit, planner in zip(payload["names"], payload["units_display"], payload["values"],
-                                                 payload["limits"], payload["planner_limits"]):
-        values_display = values * DEG
+    row = {}
+    for name, values, limit, planner in zip(payload["names"], payload["values"], payload["limits"],
+                                            payload["planner_limits"]):
+        row.update(spread(f"limits/{name}_{{}}", values * DEG))      # deg, deg/s, deg/s², deg/s³: see config
         if limit:
-            # the histogram's x-range IS the limit: samples past it are counted in the end bins, never dropped
-            low, high = limit[0] * DEG, limit[1] * DEG
-            used_pct = 100 * max(values.min() / limit[0], values.max() / limit[1])
-            bars.add_data(f"{name} (limit {high:.0f} {unit})", used_pct)
-            run.summary[f"limits/{name}_used_pct"] = used_pct
-        else:
-            low, high = 1.15 * np.percentile(values_display, [0.1, 99.9])
+            row[f"limits/{name}_used_pct"] = 100 * float(max(values.min() / limit[0], values.max() / limit[1]))
+            row[f"limits/{name}_past_limit_pct"] = 100 * float(np.mean((values < limit[0]) | (values > limit[1])))
         if planner:
-            planner_pct = 100 * max(values.min() / planner[0], values.max() / planner[1])
-            bars.add_data(f"{name} (planner {planner[1] * DEG:.0f} {unit})", planner_pct)
-            run.summary[f"limits/{name}_planner_used_pct"] = planner_pct
-        edges = np.linspace(low, high, 121)
-        histogram = np.histogram(np.clip(values_display, low, high), edges)
-        run.log({f"limits/{name}_histogram": wandb.Histogram(np_histogram=histogram)}, commit=False)
-    run.log({"limits/used_pct": wandb.plot.bar(bars, "limit", "used_pct",
-                                               title="Share of each limit the data used (%; 100 = at the limit)")})
+            row[f"limits/{name}_planner_used_pct"] = 100 * float(max(values.min() / planner[0], values.max() / planner[1]))
+    run.log(row)
+    run.config.update({"limits_units": dict(zip(payload["names"], payload["units_display"]))})
+    rerun_pointer(run, "limit-bars")
 
 
 def coverage_heatmap(run) -> None:
     payload = by_id("coverage-heatmap").data()
-    q_edges, qd_edges = payload["q_edges_deg"], payload["qd_edges_deg"]
-    cells = wandb.Table(columns=["q_low_deg", "q_high_deg", "qd_low_deg", "qd_high_deg", "runs", "samples", "reachable"])
-    for i, j in itertools.product(range(len(q_edges) - 1), range(len(qd_edges) - 1)):
-        cells.add_data(float(q_edges[i]), float(q_edges[i + 1]), float(qd_edges[j]), float(qd_edges[j + 1]),
-                       int(payload["runs"][i, j]), int(payload["samples"][i, j]), int(payload["reachable"][i, j]))
-    fields = {"x_low": "q_low_deg", "x_high": "q_high_deg", "y_low": "qd_low_deg", "y_high": "qd_high_deg",
-              "reachable": "reachable"}
-    axes = {"x_title": "q from bottom (deg)", "y_title": "qd (deg/s)"}
+    samples, runs, reachable = payload["samples"], payload["runs"], payload["reachable"]
+    visited = (samples > 0) & reachable
     run.log({
-        "coverage/runs_per_cell": wandb.plot_table(HEATMAP_CHART, cells, {**fields, "count": "runs"}, {
-            **axes, "color_title": "runs through the cell",
-            "title": f"q x qd: {payload['visited_pct']:.0f} % of reachable cells visited (white = empty, grey = unreachable)"}),
-        "coverage/samples_per_cell": wandb.plot_table(HEATMAP_CHART, cells, {**fields, "count": "samples"}, {
-            **axes, "color_title": "samples in the cell", "title": "q x qd: samples per cell"}),
-        "coverage/visited_pct": payload["visited_pct"],
-        "coverage/sufficient_pct": payload["sufficient_pct"],
+        "coverage/visited_pct": float(payload["visited_pct"]),
+        "coverage/sufficient_pct": float(payload["sufficient_pct"]),          # cells with >= 50 samples
+        "coverage/reachable_cells": int(reachable.sum()),
+        "coverage/visited_cells": int(visited.sum()),
+        "coverage/empty_reachable_cells": int((reachable & ~visited).sum()),
+        "coverage/samples": int(samples.sum()),
+        "coverage/samples_per_visited_cell_p50": float(np.median(samples[visited])),
+        "coverage/runs_per_visited_cell_p50": float(np.median(runs[visited])),
+        "coverage/runs_per_cell_max": int(runs.max()),
     })
+    rerun_pointer(run, "coverage-heatmap")
 
 
 def histogram_over_runs(run) -> None:
     payload = by_id("histogram-over-runs").data()
     limit_deg = payload["qd_limit"] * DEG
-    edges = np.linspace(-limit_deg, limit_deg, 81)          # the panel's x-range is the speed limit
-    runs = wandb.Table(columns=["step", "round", "samples", "max_abs_qd_deg_s"])
-    for step, (qd, round_name) in enumerate(zip(payload["qd_per_run"], payload["rounds"])):
+    for step, qd in enumerate(payload["qd_per_run"]):
         qd_deg = qd * DEG
-        # step = recorded run, so W&B's histogram panel stacks one distribution per run (TensorBoard's histograms)
-        run.log({"qd/histogram": wandb.Histogram(np_histogram=np.histogram(np.clip(qd_deg, -limit_deg, limit_deg), edges)),
+        # step = recorded run: p1 / p50 / p99 over steps are the histogram-over-runs as three lines
+        run.log({**spread("qd/{}_deg_s", qd_deg),
                  "qd/max_abs_deg_s": float(np.abs(qd_deg).max()),
                  "qd/p99_abs_deg_s": float(np.percentile(np.abs(qd_deg), 99)),
-                 "qd/limit_deg_s": limit_deg}, step=step)
-        runs.add_data(step, round_name, len(qd), float(np.abs(qd_deg).max()))
-    run.log({"qd/runs": runs}, step=len(payload["qd_per_run"]) - 1)
+                 "qd/limit_deg_s": limit_deg,
+                 "qd/samples": len(qd)}, step=step)
+    run.summary["qd/recorded_runs"] = len(payload["qd_per_run"])
+    run.summary["qd/rounds"] = len(set(payload["rounds"]))
+    rerun_pointer(run, "histogram-over-runs")
 
 
 def coverage_growth(run) -> None:
@@ -171,189 +126,131 @@ def coverage_growth(run) -> None:
     run.define_metric("coverage/*", step_metric="runs_recorded")
     for step in range(len(in_order)):
         run.log({"runs_recorded": step + 1,
-                 "coverage/in_order_pct": in_order[step],
-                 "coverage/random_mean_pct": mean[step],
-                 "coverage/random_p10_pct": p10[step],
-                 "coverage/random_p90_pct": p90[step],
+                 "coverage/in_order_pct": float(in_order[step]),
+                 "coverage/random_mean_pct": float(mean[step]),
+                 "coverage/random_p10_pct": float(p10[step]),
+                 "coverage/random_p90_pct": float(p90[step]),
                  "coverage/chao2_ceiling_pct": chao2}, step=step)
-    runs_recorded = list(range(1, len(in_order) + 1))
-    run.log({"coverage_chart/growth": wandb.plot.line_series(
-        xs=runs_recorded, ys=[in_order.tolist(), mean.tolist(), p10.tolist(), p90.tolist(), [chao2] * len(in_order)],
-        keys=["as recorded", "random order, mean", "random order, p10", "random order, p90", "Chao2 ceiling"],
-        title=f"% of {payload['reachable_cells']} reachable (q, qd, qdd) cells visited as runs accumulate",
-        xname="runs recorded")}, step=len(in_order) - 1)
     run.summary["coverage/reachable_cells"] = int(payload["reachable_cells"])
+    rerun_pointer(run, "coverage-growth")
 
 
 def phase_space_3d(run) -> None:
     payload = by_id("phase-space-3d").data()
-    size = payload["cell_size_deg"]
-    origin = payload["centers_deg"].min(axis=0) - size / 2
-
-    def in_cells(points_deg):
-        # one unit = one cell on every axis, else qdd's ±6000 deg/s² squashes q and qd into a flat sheet
-        return (points_deg - origin) / size
-
     counts, reachable = payload["counts"], payload["reachable"]
     visited, empty = (counts > 0) & reachable, (counts == 0) & reachable
-    shade = np.log10(counts[visited]) / np.log10(counts.max())
-    holes = [box(centre, (0.8, 0.8, 0.8)) for centre in in_cells(payload["centers_deg"][empty])]
-    samples_order = payload["sample_run"] / payload["sample_run"].max()
-    run.log({
-        # visited cells as points coloured by sample count, every reachable-but-empty cell as a red wire cube
-        "phase_space/cells": wandb.Object3D.from_point_cloud(
-            points=cloud(in_cells(payload["centers_deg"][visited]), rgb(shade)), boxes=holes),
-        # the raw samples, coloured by recording order (dark = first run, yellow = last)
-        "phase_space/samples": wandb.Object3D(cloud(in_cells(payload["samples_deg"]), rgb(samples_order, "viridis"))),
+    row = {
         "phase_space/visited_pct": float(payload["visited_pct"]),
+        "phase_space/reachable_cells": int(reachable.sum()),
+        "phase_space/visited_cells": int(visited.sum()),
         "phase_space/empty_reachable_cells": int(empty.sum()),
-    })
-    run.config.update({"phase_space_axes": payload["axes"], "phase_space_cell_size_deg": size.round(3).tolist()})
+        "phase_space/samples_per_visited_cell_p50": float(np.median(counts[visited])),
+        "phase_space/samples_per_cell_max": int(counts.max()),
+    }
+    for axis, (name, unit) in enumerate([("q", "deg"), ("qd", "deg_s"), ("qdd", "deg_s2")]):
+        row.update(spread(f"phase_space/{name}_{{}}_{unit}", payload["samples_deg"][:, axis]))
+    run.log(row)
+    run.config.update({"phase_space_axes": payload["axes"],
+                       "phase_space_cell_size_deg": payload["cell_size_deg"].round(3).tolist()})
+    rerun_pointer(run, "phase-space-3d")
 
 
 def tool_paths(run) -> None:
     payload = by_id("tool-paths").data()
     counts = payload["voxel_counts"]
-    edges = [axis_edges * 100 for axis_edges in payload["voxel_edges_m"]]       # cm: see box()
-    every = np.concatenate(payload["paths_m"]) * 100
-    points = every[::int(np.ceil(len(every) / MAX_POINTS))]
-    voxel_of = tuple(np.clip(np.searchsorted(edges[axis], points[:, axis]) - 1, 0, counts.shape[axis] - 1)
-                     for axis in range(3))
-    heat = np.log1p(counts[voxel_of]) / np.log1p(counts.max())
-    occupied = np.argwhere(counts > 0)
-    voxel_size = [edges[axis][1] - edges[axis][0] for axis in range(3)]
-    centres = np.array([[edges[axis][index[axis]] + voxel_size[axis] / 2 for axis in range(3)] for index in occupied])
-    occupancy = np.log1p(counts[tuple(occupied.T)]) / np.log1p(counts.max())
-    run.log({
-        # Strava in 3-D: W&B point clouds have no opacity, so busy places glow by their voxel's count instead
-        "tool_paths/strava": wandb.Object3D(cloud(points, rgb(heat))),
-        # every occupied 2 cm voxel as a wire cube, dark = visited once ... yellow = the busiest
-        "tool_paths/voxels": wandb.Object3D.from_point_cloud(
-            points=cloud(centres, rgb(occupancy)),
-            boxes=[box(centre, voxel_size, colour=rgb(share)) for centre, share in zip(centres, occupancy)]),
+    every = np.concatenate(payload["paths_m"]) * 100                       # cm, base_link
+    lengths_cm = [100 * float(np.linalg.norm(np.diff(path, axis=0), axis=1).sum()) for path in payload["paths_m"]]
+    occupied = np.sort(counts[counts > 0])[::-1]
+    busiest_tenth = occupied[:math.ceil(len(occupied) / 10)]
+    row = {
         "tool_paths/paths": len(payload["paths_m"]),
-        "tool_paths/occupied_voxels": len(occupied),
-    })
+        "tool_paths/points": len(every),
+        "tool_paths/occupied_voxels": len(occupied),                         # 2 cm voxels
+        "tool_paths/occupied_pct": 100 * len(occupied) / counts.size,         # of the paths' bounding box
+        "tool_paths/busiest_tenth_share_pct": 100 * float(busiest_tenth.sum() / occupied.sum()),
+        "tool_paths/busiest_voxel_points": int(occupied[0]),
+        **spread("tool_paths/path_length_{}_cm", lengths_cm),
+    }
+    for axis, name in enumerate("xyz"):
+        row[f"tool_paths/{name}_min_cm"] = float(every[:, axis].min())
+        row[f"tool_paths/{name}_max_cm"] = float(every[:, axis].max())
+    run.log(row)
+    rerun_pointer(run, "tool-paths")
 
 
 def grasp_poses(run) -> None:
     payload = by_id("grasp-poses").data()
     limit = payload["opening_limit_rad"]
-    positions_cm = payload["positions_m"] * 100                # cm: see box()
-    finger_cm, finger_width_cm, jaw_cm = 4.0, 1.2, 0.3
-    jaws = []
-    for position, rotation, opening in zip(positions_cm, payload["rotations"], payload["opening_rad"]):
-        half_width = 3.5 * opening / limit                    # jaw gap drawn in proportion to the claw angle
-        jaw, approach = rotation[:, 0], rotation[:, 2]        # box axes = (opening, binormal, approach)
-        colour = rgb(opening / limit, "viridis")              # the TCP points' colour: yellow = at the claw limit
-        for side in (1, -1):                                  # two fingers reaching back from the TCP
-            centre = position + side * half_width * jaw - finger_cm / 2 * approach
-            jaws.append(box(centre, (jaw_cm, finger_width_cm, finger_cm), rotation, colour))
-        palm = position - finger_cm * approach
-        jaws.append(box(palm, (2 * half_width + jaw_cm, finger_width_cm, jaw_cm), rotation, colour))
-    openings = wandb.Table(columns=["opening_deg", "run"],
-                           data=[[float(o * DEG), r] for o, r in zip(payload["opening_rad"], payload["runs"])])
-    at_limit_pct = 100 * float(np.mean(payload["opening_rad"] >= limit - np.radians(0.5)))
-    run.log({
-        "grasps/grippers": wandb.Object3D.from_point_cloud(
-            points=cloud(positions_cm, rgb(payload["opening_rad"] / limit, "viridis")), boxes=jaws),
-        "grasps/opening_histogram": wandb.plot.histogram(
-            openings, "opening_deg", title=f"Claw opening at each grasp (deg); the limit is {limit * DEG:.1f}°"),
-        "grasps/opening_limit_deg": limit * DEG,
-        "grasps/at_claw_limit_pct": at_limit_pct,
+    positions_cm = payload["positions_m"] * 100
+    row = {
         "grasps/count": len(payload["positions_m"]),
-    })
+        "grasps/runs": len(set(payload["runs"])),
+        "grasps/opening_limit_deg": limit * DEG,
+        "grasps/at_claw_limit_pct": 100 * float(np.mean(payload["opening_rad"] >= limit - np.radians(0.5))),
+        **spread("grasps/opening_{}_deg", payload["opening_rad"] * DEG),
+    }
+    for axis, name in enumerate("xyz"):
+        row.update(spread(f"grasps/tcp_{name}_{{}}_cm", positions_cm[:, axis]))
+    run.log(row)
+    rerun_pointer(run, "grasp-poses")
 
 
 def direction_sphere(run) -> None:
     payload = by_id("direction-sphere").data()
-    rings, sectors, counts = payload["rings"], payload["sectors"], payload["counts"]
-    z_edges, azimuth_edges = np.linspace(-1, 1, rings + 1), np.linspace(-180, 180, sectors + 1)
-    # a dense sphere surface, each point painted with its equal-area bin's count (rings uniform in z)
-    k = np.arange(20_000) + 0.5
-    z, azimuth = 1 - 2 * k / len(k), (np.pi * (1 + 5 ** 0.5) * k) % (2 * np.pi) - np.pi
-    surface = np.column_stack([np.sqrt(1 - z ** 2) * np.cos(azimuth), np.sqrt(1 - z ** 2) * np.sin(azimuth), z])
-    ring = np.clip(((z + 1) / 2 * rings).astype(int), 0, rings - 1)
-    sector = np.clip(((azimuth + np.pi) / (2 * np.pi) * sectors).astype(int), 0, sectors - 1)
-    bin_count = counts[ring, sector]
-    colours = np.where(bin_count[:, None] > 0, rgb(np.log1p(bin_count) / np.log1p(counts.max())), GREY)
-    approaches = [{"start": [0, 0, 0], "end": np.round(d, 4).tolist()} for d in payload["directions"]]
-    cells = wandb.Table(columns=["azimuth_low", "azimuth_high", "z_low", "z_high", "grasps", "reachable"])
-    for r, s in itertools.product(range(rings), range(sectors)):
-        cells.add_data(float(azimuth_edges[s]), float(azimuth_edges[s + 1]), float(z_edges[r]), float(z_edges[r + 1]),
-                       int(counts[r, s]), 1)
+    counts, approach_z = payload["counts"], payload["directions"][:, 2]
     run.log({
-        "directions/sphere": wandb.Object3D.from_point_cloud(points=cloud(surface, colours), boxes=[], vectors=approaches),
-        # the same bins unrolled: x = azimuth, y = z is Lambert's cylindrical equal-area map, so every cell is one area
-        "directions/equal_area_map": wandb.plot_table(HEATMAP_CHART, cells, {
-            "x_low": "azimuth_low", "x_high": "azimuth_high", "y_low": "z_low", "y_high": "z_high", "count": "grasps",
-            "reachable": "reachable"}, {
-            "x_title": "approach azimuth (deg)", "y_title": "approach z (-1 = straight down)",
-            "color_title": "grasps in the cell",
-            "title": f"Approach directions on equal-area cells: {payload['visited_pct']:.1f} % used"}),
-        "directions/visited_pct": float(payload["visited_pct"]),
+        "directions/visited_pct": float(payload["visited_pct"]),             # of 12 x 24 equal-area cells
+        "directions/cells": int(counts.size),
+        "directions/used_cells": int((counts > 0).sum()),
+        "directions/grasps": len(approach_z),
+        "directions/busiest_cell_grasps": int(counts.max()),
+        "directions/within_30deg_of_down_pct": 100 * float(np.mean(approach_z <= -np.cos(np.radians(30)))),
+        **spread("directions/approach_z_{}", approach_z),                    # -1 = straight down
     })
+    rerun_pointer(run, "direction-sphere")
 
 
 IMPLEMENTATIONS = {"limit-bars": limit_bars, "coverage-heatmap": coverage_heatmap, "histogram-over-runs": histogram_over_runs,
                    "coverage-growth": coverage_growth, "phase-space-3d": phase_space_3d, "tool-paths": tool_paths,
                    "grasp-poses": grasp_poses, "direction-sphere": direction_sphere}
 
-# what to open in each run, and how native W&B's version is (honest)
+# what to open in each run, and how much of the view W&B still holds (honest)
 PANEL_HINTS = {
-    "limit-bars": "custom chart limits/used_pct (bars, % of each limit) + histograms limits/q_histogram, qd, qdd, qddd",
-    "coverage-heatmap": "custom chart coverage/runs_per_cell (and coverage/samples_per_cell); scalar coverage/visited_pct",
-    "histogram-over-runs": "histogram panel qd/histogram (one distribution per step = recorded run); "
-                           "line qd/max_abs_deg_s vs qd/limit_deg_s",
-    "coverage-growth": "line charts coverage/* over runs_recorded; one-panel version: custom chart coverage_chart/growth",
-    "phase-space-3d": "3-D panel phase_space/cells (red wire cubes = reachable but empty); phase_space/samples",
-    "tool-paths": "3-D panel tool_paths/strava; tool_paths/voxels",
-    "grasp-poses": "3-D panel grasps/grippers; custom chart grasps/opening_histogram",
-    "direction-sphere": "3-D panel directions/sphere; custom chart directions/equal_area_map",
+    "limit-bars": "bar chart limits/*_used_pct (% of each limit); scalars limits/<q|qd|qdd|qddd>_p01 .. _p99",
+    "coverage-heatmap": "scalars coverage/visited_pct, coverage/sufficient_pct, coverage/empty_reachable_cells",
+    "histogram-over-runs": "lines qd/p01_deg_s, qd/p50_deg_s, qd/p99_deg_s per recorded run; qd/max_abs_deg_s vs "
+                           "qd/limit_deg_s",
+    "coverage-growth": "line charts coverage/* over runs_recorded",
+    "phase-space-3d": "scalars phase_space/visited_pct, phase_space/empty_reachable_cells; the 3-D view is the .rrd",
+    "tool-paths": "scalars tool_paths/occupied_voxels, tool_paths/busiest_tenth_share_pct; the 3-D view is the .rrd",
+    "grasp-poses": "scalars grasps/at_claw_limit_pct, grasps/opening_p01 .. _p99_deg; the grippers are the .rrd",
+    "direction-sphere": "scalars directions/visited_pct, directions/within_30deg_of_down_pct; the sphere is the .rrd",
 }
 NOTES = {
-    "limit-bars": "Native bar chart + native histograms. No panel draws a limit line on a histogram, so each histogram's "
-                  "x-range is set to exactly the limit (samples past it land in the end bins) and the bar chart gives "
-                  "the share of each limit used; qddd has no limit, so its range is 1.15 x its p0.1/p99.9.",
-    "coverage-heatmap": "W&B has no heatmap preset (probed: none of wandb/heatmap/v0 etc. exist; 17 SDK presets, none a "
-                        "heatmap). This is a custom Vega-Lite chart saved privately under the entity "
-                        f"({HEATMAP_CHART}) and logged with wandb.plot_table: a native custom-chart panel, our spec.",
-    "histogram-over-runs": "Fully native: wandb.Histogram once per step. W&B draws steps as a heat strip (step on one "
-                           "axis, qd on the other), not TensorBoard's offset ridgeline. Range = ±the qd limit.",
-    "coverage-growth": "Fully native scalars over a custom x (runs_recorded). W&B line plots cannot shade a band, so the "
-                       "random-order 10-90 % band is two lines (p10, p90); Chao2 is a constant line.",
-    "phase-space-3d": "Native Object3D point cloud. No axis labels or ticks in W&B's 3-D viewer, and axes are rescaled "
-                      "to one unit per cell (else qdd flattens the cloud); sizes in the run config.",
-    "tool-paths": "Native Object3D. Point clouds have no opacity, so the Strava look is a density colour (plasma) on a "
-                  "<= 90 k-point subsample of every planned TCP path; voxels are wire boxes. Centimetres, base frame.",
-    "grasp-poses": "Native Object3D boxes as thin two-finger grippers (2 fingers + palm per grasp, coloured by claw "
-                   "opening / limit). Corners built by hand: wandb 0.31's box3d mirrors most rotations, and W&B's "
-                   "viewer needs boxes of several units, so the scene is in cm. Jaw gap drawn in proportion to the "
-                   "claw angle, not the claw's kinematics.",
-    "direction-sphere": "Native Object3D: a 20 k-point sphere painted by bin count plus one vector per grasp. The flat "
-                        "map is the same custom Vega-Lite heatmap (Lambert equal-area: x = azimuth, y = z).",
+    "limit-bars": "Summary statistics only (2026-11-21): the share of each limit used and past it, and each "
+                  "derivative's min / p1 / p50 / p99 / max as scalars, one bar chart over them. The histograms against "
+                  "the limit are the Rerun column's .rrd.",
+    "coverage-heatmap": "Summary statistics only (2026-11-21): visited and sufficient % of reachable cells, cell "
+                        "counts, samples and runs per visited cell. The q x qd heatmap is the Rerun column's .rrd.",
+    "histogram-over-runs": "Summary statistics only (2026-11-21): p1, p50 and p99 of qd per step (step = recorded run) "
+                           "as three native lines, which is the histogram-over-runs read as a band; max |qd| against "
+                           "the limit. The per-run histograms are the Rerun column's .rrd.",
+    "coverage-growth": "Fully native scalars over a custom x (runs_recorded), unchanged by the 2026-11-21 cut. W&B line "
+                       "plots cannot shade a band, so the random-order 10-90 % band is two lines (p10, p90); Chao2 is a "
+                       "constant line.",
+    "phase-space-3d": "Summary statistics only (2026-11-21): visited / empty reachable (q, qd, qdd) cells and each "
+                      "axis' range. The 3-D cells and samples are the Rerun column's .rrd.",
+    "tool-paths": "Summary statistics only (2026-11-21): paths, occupied 2 cm voxels, how much of the traffic the "
+                  "busiest tenth of voxels carries, path lengths, workspace extents (cm, base_link). The Strava view "
+                  "is the Rerun column's .rrd.",
+    "grasp-poses": "Summary statistics only (2026-11-21): grasp count, claw opening percentiles and the share at the "
+                   "claw limit, TCP extents (cm, base_link). The grippers are the Rerun column's .rrd.",
+    "direction-sphere": "Summary statistics only (2026-11-21): used equal-area cells (12 x 24), the busiest cell, the "
+                        "share of approaches within 30° of straight down. The sphere is the Rerun column's .rrd.",
 }
 
 
 # --- logging, verification, report -------------------------------------------------------------------------------------
-
-def publish_heatmap_chart(api) -> str:
-    """Create or update HEATMAP_SPEC as a PRIVATE custom chart under the entity (the Panel Gallery's vega.publish recipe:
-    wandb 0.31's Api.create_custom_chart cannot update, so a re-run uses the two GraphQL mutations)."""
-    from wandb_workspaces._graphql import execute_graphql
-
-    name = HEATMAP_CHART.split("/", 1)[1]
-    chart_input = {"entity": ENTITY, "name": name, "displayName": "Coverage heatmap (binned x/x2, y/y2; log colour)",
-                   "type": "vega2", "access": "PRIVATE", "spec": json.dumps(HEATMAP_SPEC, indent=1)}
-    existing = execute_graphql(api, "query ($id: ID!) { customChart(id: $id) { id } }", {"id": HEATMAP_CHART})["customChart"]
-    verb = "updateCustomChart" if existing else "createCustomChart"
-    mutation = (f"mutation ($input: {verb[0].upper() + verb[1:]}Input!) "
-                f"{{ {verb}(input: $input) {{ chart {{ id access }} }} }}")
-    chart = execute_graphql(api, mutation, {"input": chart_input})[verb]["chart"]
-    if chart["access"] != "PRIVATE":
-        raise SystemExit(f"FAIL: {chart['id']} saved as {chart['access']}")
-    return chart["id"]
-
 
 def run_id(*parts: str) -> str:
     """A stable W&B run id, the house rule (bam_trackio.wandb_view.wandb_id_text): 16 hex characters of a sha1."""
@@ -368,14 +265,14 @@ def browser_url(url: str) -> str:
 
 
 EXPECTED = {   # key -> how many history rows it must have (None = summary only)
-    "limit-bars": {"limits/q_histogram": 1, "limits/qddd_histogram": 1, "limits/used_pct_table": 1, "limits/qd_used_pct": None},
-    "coverage-heatmap": {"coverage/runs_per_cell_table": 1, "coverage/samples_per_cell_table": 1, "coverage/visited_pct": 1},
-    "histogram-over-runs": {"qd/histogram": "runs", "qd/max_abs_deg_s": "runs", "qd/runs": None},
-    "coverage-growth": {"coverage/in_order_pct": "runs", "coverage/random_p90_pct": "runs", "coverage_chart/growth_table": None},
-    "phase-space-3d": {"phase_space/cells": 1, "phase_space/samples": 1, "phase_space/visited_pct": 1},
-    "tool-paths": {"tool_paths/strava": 1, "tool_paths/voxels": 1},
-    "grasp-poses": {"grasps/grippers": 1, "grasps/opening_histogram_table": 1, "grasps/at_claw_limit_pct": 1},
-    "direction-sphere": {"directions/sphere": 1, "directions/equal_area_map_table": 1},
+    "limit-bars": {"limits/q_used_pct": 1, "limits/qddd_p99": 1, "limits/qdd_planner_used_pct": 1},
+    "coverage-heatmap": {"coverage/visited_pct": 1, "coverage/empty_reachable_cells": 1},
+    "histogram-over-runs": {"qd/p50_deg_s": "runs", "qd/max_abs_deg_s": "runs", "qd/recorded_runs": None},
+    "coverage-growth": {"coverage/in_order_pct": "runs", "coverage/random_p90_pct": "runs", "coverage/reachable_cells": None},
+    "phase-space-3d": {"phase_space/visited_pct": 1, "phase_space/empty_reachable_cells": 1},
+    "tool-paths": {"tool_paths/occupied_voxels": 1, "tool_paths/path_length_p50_cm": 1},
+    "grasp-poses": {"grasps/at_claw_limit_pct": 1, "grasps/opening_p50_deg": 1},
+    "direction-sphere": {"directions/visited_pct": 1, "directions/used_cells": 1},
 }
 
 
@@ -408,7 +305,6 @@ def verify(api, logged: dict, patience_s: float = 300.0) -> dict:
 
 def log_runs() -> dict:
     """Log one run per type (see the module docstring). Returns {type_id: {run_id, run_url, panel_hint, notes}}."""
-    publish_heatmap_chart(wandb.Api(timeout=60))
     WANDB_DIR.mkdir(parents=True, exist_ok=True)
     stamp = time.strftime("%Y%m%dT%H%M%S")
     logged = {}
@@ -451,7 +347,7 @@ def publish(logged: dict) -> dict:
         report_url = f"(report not saved: {error})"
     for entry in logged.values():
         entry["report_url"] = report_url
-    return {**logged, "_checks": {**checks, "replaced_runs": replaced, "heatmap_chart": HEATMAP_CHART}}
+    return {**logged, "_checks": {**checks, "replaced_runs": replaced}}
 
 
 def log_all() -> dict:
@@ -477,7 +373,7 @@ class _OnlyKeys:
 
 def relog(type_id: str, keys: list[str]) -> str:
     """Re-log `keys` of one type into its existing run (resume="must"), from the current code and data: fixes a panel
-    without a new run. The key's old version stays one step back on the panel's step slider."""
+    without a new run. The key's old value stays one step back in the run's history."""
     existing = logged_in_project()[type_id]["run_id"]
     run = wandb.init(entity=ENTITY, project=PROJECT, id=existing, resume="must", dir=str(WANDB_DIR), reinit="create_new")
     IMPLEMENTATIONS[type_id](_OnlyKeys(run, keys))
@@ -486,74 +382,78 @@ def relog(type_id: str, keys: list[str]) -> str:
 
 
 def _report_panels(wr, type_id: str) -> list:
-    """The panels each type's report section shows (its run's keys)."""
+    """The panels each type's report section shows: charts over its run's scalars, and where its picture lives.
+    WHY no MediaBrowser / custom chart (Zach, 2026-11-21: "to help limit W and B storage I think we need to just be
+    using it for summary statistics; for the media-rich things we should be using rerun!"): the run holds no media or
+    table keys any more, so the picture is a pointer to the Rerun column's .rrd."""
     L = wr.Layout
 
-    def chart(key, spec, fields, title, x=0, w=24):
-        panel = wr.CustomChart.from_table(f"{key}_table", chart_fields=fields, chart_strings={"title": title})
-        panel.chart_name = spec
-        panel.layout = L(x=x, y=0, w=w, h=10)
-        return panel
+    def bars(title, metrics, x=0, w=12):
+        return wr.BarPlot(title=title, metrics=metrics, orientation="h", layout=L(x=x, y=0, w=w, h=8))
 
-    heat_fields = {"x_low": "q_low_deg", "x_high": "q_high_deg", "y_low": "qd_low_deg", "y_high": "qd_high_deg",
-                   "reachable": "reachable"}
-    heat_axes = {"x_title": "q from bottom (deg)", "y_title": "qd (deg/s)"}
+    def number(title, metric, x, w=6):
+        return wr.ScalarChart(title=title, metric=metric, layout=L(x=x, y=0, w=w, h=8))
+
+    def in_rerun(what, x=12, w=12):
+        rrd = RERUN_MEDIA / f"{type_id}.rrd"
+        return wr.MarkdownPanel(markdown=f"**{what}** is kept off W&B (summary statistics only, since 2026-11-21): it is "
+                                         f"the gallery's Rerun column. On the workstation:\n\n`rerun {rrd}`\n\n(written "
+                                         f"by `tools_rerun.py::{type_id.replace('-', '_')}`)", layout=L(x=x, y=0, w=w, h=8))
+
     return {
-        "limit-bars": [chart("limits/used_pct", "wandb/bar/v0", {"label": "limit", "value": "used_pct"},
-                             "Share of each limit the data used (%)", w=8)]
-                      + [wr.LinePlot(title=f"{name} (x-range = the limit)", y=[f"limits/{name}_histogram"],
-                                     layout=L(x=8 + 4 * index, y=0, w=4, h=10))
-                         for index, name in enumerate(["q", "qd", "qdd", "qddd"])],
-        "coverage-heatmap": [
-            chart("coverage/runs_per_cell", HEATMAP_CHART, {**heat_fields, "count": "runs"}, "Runs through each q x qd cell", w=12),
-            chart("coverage/samples_per_cell", HEATMAP_CHART, {**heat_fields, "count": "samples"}, "Samples per cell", x=12, w=12)],
+        "limit-bars": [bars("Share of each limit the data used (%; 100 = at the limit)",
+                            ["limits/q_used_pct", "limits/qd_used_pct", "limits/qdd_used_pct", "limits/qdd_planner_used_pct"]),
+                       in_rerun("Each derivative's histogram against its limit")],
+        "coverage-heatmap": [number("Reachable q x qd cells visited (%)", "coverage/visited_pct", x=0),
+                             number("Cells with >= 50 samples (%)", "coverage/sufficient_pct", x=6),
+                             in_rerun("The q x qd heatmap (runs and samples per cell)")],
         "histogram-over-runs": [
-            wr.LinePlot(title="qd per recorded run (step = run)", y=["qd/histogram"], layout=L(x=0, y=0, w=14, h=12)),
+            wr.LinePlot(title="qd per recorded run: p1, p50, p99 (deg/s; step = run)",
+                        y=["qd/p01_deg_s", "qd/p50_deg_s", "qd/p99_deg_s"], layout=L(x=0, y=0, w=9, h=10)),
             wr.LinePlot(title="max |qd| per run vs the limit (deg/s)", y=["qd/max_abs_deg_s", "qd/p99_abs_deg_s", "qd/limit_deg_s"],
-                        layout=L(x=14, y=0, w=10, h=12))],
+                        layout=L(x=9, y=0, w=9, h=10)),
+            in_rerun("One qd histogram per recorded run", x=18, w=6)],
         "coverage-growth": [
             wr.LinePlot(title="% of reachable (q, qd, qdd) cells visited", x="runs_recorded",
                         y=["coverage/in_order_pct", "coverage/random_mean_pct", "coverage/random_p10_pct",
                            "coverage/random_p90_pct", "coverage/chao2_ceiling_pct"], layout=L(x=0, y=0, w=24, h=10))],
-        "phase-space-3d": [wr.MediaBrowser(title="cells: points = visited, red cubes = reachable but empty",
-                                           media_keys=["phase_space/cells"], layout=L(x=0, y=0, w=12, h=14)),
-                           wr.MediaBrowser(title="samples, coloured by recording order", media_keys=["phase_space/samples"],
-                                           layout=L(x=12, y=0, w=12, h=14))],
-        "tool-paths": [wr.MediaBrowser(title="every planned TCP path, coloured by voxel density", media_keys=["tool_paths/strava"],
-                                       layout=L(x=0, y=0, w=12, h=14)),
-                       wr.MediaBrowser(title="occupied 2 cm voxels", media_keys=["tool_paths/voxels"], layout=L(x=12, y=0, w=12, h=14))],
-        "grasp-poses": [wr.MediaBrowser(title="every real repick grasp as a thin gripper", media_keys=["grasps/grippers"],
-                                        layout=L(x=0, y=0, w=14, h=14)),
-                        chart("grasps/opening_histogram", "wandb/histogram/v0", {"value": "opening_deg"},
-                              "Claw opening at each grasp (deg)", x=14, w=10)],
-        "direction-sphere": [wr.MediaBrowser(title="approach directions on the bin-painted sphere", media_keys=["directions/sphere"],
-                                             layout=L(x=0, y=0, w=12, h=14)),
-                             chart("directions/equal_area_map", HEATMAP_CHART,
-                                   {"x_low": "azimuth_low", "x_high": "azimuth_high", "y_low": "z_low", "y_high": "z_high",
-                                    "count": "grasps", "reachable": "reachable"}, "Equal-area map", x=12, w=12)],
+        "phase-space-3d": [number("Reachable (q, qd, qdd) cells visited (%)", "phase_space/visited_pct", x=0),
+                           number("Reachable cells never visited", "phase_space/empty_reachable_cells", x=6),
+                           in_rerun("The 3-D cells and samples")],
+        "tool-paths": [number("Occupied 2 cm voxels", "tool_paths/occupied_voxels", x=0),
+                       number("Traffic in the busiest tenth of voxels (%)", "tool_paths/busiest_tenth_share_pct", x=6),
+                       in_rerun("Every planned TCP path and the voxel occupancy")],
+        "grasp-poses": [bars("Claw opening at each grasp (deg)", ["grasps/opening_p01_deg", "grasps/opening_p50_deg",
+                                                                  "grasps/opening_p99_deg", "grasps/opening_limit_deg"]),
+                        in_rerun("Every real repick grasp as a thin gripper")],
+        "direction-sphere": [number("Equal-area direction cells used (%)", "directions/visited_pct", x=0),
+                             number("Approaches within 30° of straight down (%)", "directions/within_30deg_of_down_pct", x=6),
+                             in_rerun("The approach directions on the bin-painted sphere")],
     }[type_id]
 
 
 def save_report(logged: dict) -> str:
-    """One W&B report, a section per type: its question, its source, how native W&B's version is, and its panels over
-    a runset filtered to that type's run. Best effort: the runs' own workspaces are the fallback surface."""
+    """One W&B report, a section per type: its question, its source, what W&B holds of it, and its panels over a
+    runset filtered to that type's run. Best effort: the runs' own workspaces are the fallback surface."""
     try:
         import wandb_workspaces.reports.v2 as wr
         from wandb_workspaces import expr
     except ImportError:
         return ""
     blocks = [wr.MarkdownBlock(text="The W&B column of the robot dataset coverage gallery: the same eight coverage views "
-                                    "drawn in Matplotlib, Rerun, Viser and W&B from one dataset (robot_metrics "
-                                    "`docs/proposals/coverage-2026-11-19/core_types.py`). One run per view type."),
+                                    "in Matplotlib, Rerun, Viser and W&B from one dataset (robot_metrics "
+                                    "`docs/proposals/coverage-2026-11-19/core_types.py`). One run per view type. Since "
+                                    "2026-11-21 W&B holds each view's summary statistics only; the pictures are the "
+                                    "Rerun column's .rrd files."),
               wr.TableOfContents()]
     for core in TYPES:
         blocks += [wr.H2(text=core.title),
-                   wr.MarkdownBlock(text=f"**{core.question}**  \n{core.data()['source']}  \n*How native:* {NOTES[core.id]}"),
+                   wr.MarkdownBlock(text=f"**{core.question}**  \n{core.data()['source']}  \n*On W&B:* {NOTES[core.id]}"),
                    wr.PanelGrid(runsets=[wr.Runset(entity=ENTITY, project=PROJECT, name=core.id,
                                                    filters=[expr.Config("type_id") == core.id])],
                                 panels=_report_panels(wr, core.id))]
     report = wr.Report(entity=ENTITY, project=PROJECT, title="Robot dataset coverage gallery · W&B column",
-                       description="Eight coverage-view types, logged the W&B-native way; one run each", blocks=blocks)
+                       description="Eight coverage-view types as W&B summary statistics; one run each", blocks=blocks)
     report.width = "fluid"
     try:
         report.save()
