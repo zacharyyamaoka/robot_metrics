@@ -37,8 +37,9 @@ test = ["pytest>=8", "matplotlib>=3.8"]
 site = ["matplotlib>=3.8", "pygments>=2.17", "mujoco>=3.2"]
 
 [project.urls]
-Homepage = "https://zacharyyamaoka.github.io/robot_metrics/"
-Source = "https://github.com/zacharyyamaoka/robot_metrics"
+Homepage = "https://github.com/zacharyyamaoka/robot_metrics"
+Repository = "https://github.com/zacharyyamaoka/robot_metrics"
+Documentation = "https://zacharyyamaoka.github.io/robot_metrics/"
 Changelog = "https://github.com/zacharyyamaoka/robot_metrics/blob/main/CHANGELOG.md"
 
 # WHY no [tool.uv.sources] override for robot-msgs (public release, 2026-11-18): robot-msgs comes from PyPI so a fresh
