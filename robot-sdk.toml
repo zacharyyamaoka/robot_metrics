@@ -1,0 +1,23 @@
+# robot-sdk declaration: the shared types this package's public API takes (consumes) and gives (produces),
+# each with the symbols that are the contract. Checked against the code by robot_sdk's
+# `python -m tools.sdk_graph check` (docs/graph-schema.md in github.com/zacharyyamaoka/robot_sdk).
+schema = "robot-sdk-declaration/1"
+role = "library"
+layer = "leaf"
+one_line = "Tracking, stop, lag, repeatability metrics over message streams"
+
+[[consumes]]
+type = "robot_msgs.trajectory.JointTrajectory"
+symbols = [
+  "robot_metrics.stops.stops",
+  "robot_metrics.alignment.align",
+  "robot_metrics.alignment.Aligner.push",
+]
+
+[[produces]]
+type = "robot_msgs.trajectory.JointTrajectory"
+symbols = [
+  "robot_metrics.alignment.Aligned.target",
+  "robot_metrics.alignment.Aligned.measured",
+  "robot_metrics.stops.Stop.move",
+]
